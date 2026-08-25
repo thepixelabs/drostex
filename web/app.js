@@ -133,7 +133,6 @@ function markActive(name) {
   if (!name) { insp.hidden = true; return; }
   insp.hidden = false;
   $('inspector-title').textContent = schemas[name]?.label ?? name;
-  buildAudioRouting(name);
 }
 
 /* ── parameter inspector ──────────────────────────────────── */
@@ -146,7 +145,6 @@ const GROUPS = {
     Shape: ['space', 'wave', 'cycles', 'rate'],
     Colour: ['colorMode', 'paletteName', 'colorA', 'colorB', 'hue'],
     Range: ['contrast', 'floor'],
-    Sound: ['audioBand', 'audioAmount'],
   },
   snake: {
     Shape: ['path', 'length', 'count'],
@@ -309,107 +307,6 @@ function paramControl(key, def, values, push) {
   return wrap;
 }
 
-/* ── sound routing ────────────────────────────────────────
- *
- * The cube's own "pulse to music" only reaches the firmware's effects, so
- * streamed animations need audio from here. Rather than hard-wiring it to
- * brightness, it modulates whichever parameter you point it at - so the same
- * control drives tail length, glow, speed or hue depending on the target.
- */
-function buildAudioRouting(name) {
-  const spec = schemas[name];
-  const sel = $('audio-target');
-  if (!spec) return;
-
-  const numeric = Object.entries(spec.params)
-    .filter(([, d]) => d.type === 'number')
-    .map(([k, d]) => [k, d.label ?? k]);
-
-  const prev = sel.value;
-  sel.replaceChildren(
-    ...[['none', 'Nothing'], ['brightness', 'Brightness']].concat(numeric).map(([v, label]) => {
-      const o = document.createElement('option');
-      o.value = v; o.textContent = label;
-      return o;
-    }),
-  );
-  sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'none';
-  toggleAudioExtras();
-}
-
-function toggleAudioExtras() {
-  const on = $('audio-target').value !== 'none';
-  $('audio-extra').hidden = !on;
-  $('audio-amount-wrap').hidden = !on;
-}
-
-$('audio-target').addEventListener('change', () => {
-  toggleAudioExtras();
-  api('params', { audioTarget: $('audio-target').value }).catch(() => {});
-});
-$('audio-band').addEventListener('change', () =>
-  api('params', { audioBand: $('audio-band').value }).catch(() => {}));
-$('audio-amount').addEventListener('input', () => {
-  $('audio-amount-out').textContent = $('audio-amount').value;
-  api('params', { audioAmount: Number($('audio-amount').value) / 100 }).catch(() => {});
-});
-
-let micStream = null, micTimer = null;
-async function toggleMic() {
-  const btn = $('mic');
-  if (micStream) {
-    clearInterval(micTimer);
-    micStream.getTracks().forEach((t) => t.stop());
-    micStream = null;
-    btn.textContent = 'Turn on microphone';
-    btn.classList.remove('is-on');
-    $('meter').firstElementChild.style.width = '0%';
-    api('audio', { level: 0, bass: 0, mid: 0, treble: 0 }).catch(() => {});
-    return;
-  }
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      // All three are tuned for speech and would duck the music we want to follow.
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-  } catch {
-    btn.textContent = 'Microphone blocked';
-    return;
-  }
-
-  const ctx = new AudioContext();
-  const an = ctx.createAnalyser();
-  an.fftSize = 1024;
-  an.smoothingTimeConstant = 0.6;
-  ctx.createMediaStreamSource(micStream).connect(an);
-
-  const bins = new Uint8Array(an.frequencyBinCount);
-  const hz = ctx.sampleRate / an.fftSize;
-  const band = (lo, hi) => {
-    const a = Math.max(1, Math.floor(lo / hz));
-    const b = Math.min(bins.length - 1, Math.ceil(hi / hz));
-    let sum = 0;
-    for (let i = a; i <= b; i++) sum += bins[i];
-    return sum / ((b - a + 1) * 255);
-  };
-
-  // Decaying peak, so a quiet room and a loud one both use the full range.
-  let peak = 0.15;
-  btn.textContent = 'Microphone on';
-  btn.classList.add('is-on');
-  micTimer = setInterval(() => {
-    an.getByteFrequencyData(bins);
-    const raw = { bass: band(20, 250), mid: band(250, 2000), treble: band(2000, 8000) };
-    const level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
-    peak = Math.max(level, peak * 0.995, 0.05);
-    const n = (x) => Math.min(1, x / peak);
-    const payload = { level: n(level), bass: n(raw.bass), mid: n(raw.mid), treble: n(raw.treble) };
-    $('meter').firstElementChild.style.width = `${Math.round(payload.level * 100)}%`;
-    api('audio', payload).catch(() => {});
-  }, 40);
-}
-$('mic').addEventListener('click', toggleMic);
-
 $('reset-params').addEventListener('click', async () => {
   if (!current) return;
   const { values } = await api('anim-params', { name: current, reset: true });
@@ -528,11 +425,31 @@ function bindSeg(id, onPick) {
 }
 bindSeg('sparkle', (v) => api('device/state', { sparkle: Number(v) }));
 
-const SYMMETRY_LABELS = ['Default', 'None', 'Cubic', 'Helical', 'Trigonal',
-                         'Mirror', 'Vertex', 'Inversion', 'Cyclic'];
-(() => {
+/* Two symmetry controls, because they are two different things and each only
+   works in one place. Ours folds the sampling index of a streamed animation;
+   the firmware's folds its own effect renderer, which realtime data bypasses.
+   Putting each beside what it affects is the only non-confusing arrangement. */
+const OUR_SYMMETRY = {
+  none: 'None', reverse: 'Reverse', mirror: 'Mirror',
+  cyclic2: 'Cyclic ×2', cyclic4: 'Cyclic ×4', edgeMirror: 'Edge mirror',
+};
+function fillSymmetry(names) {
   const el = $('symmetry');
-  el.replaceChildren(...SYMMETRY_LABELS.map((n, i) => {
+  if (el.dataset.filled) return;
+  el.dataset.filled = '1';
+  el.replaceChildren(...names.map((n) => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = OUR_SYMMETRY[n] ?? n;
+    return o;
+  }));
+  el.addEventListener('change', () => api('params', { symmetry: el.value }).catch(() => {}));
+}
+
+const FX_SYMMETRY = ['Default', 'None', 'Cubic', 'Helical', 'Trigonal',
+                     'Mirror', 'Vertex', 'Inversion', 'Cyclic'];
+(() => {
+  const el = $('fx-symmetry');
+  el.replaceChildren(...FX_SYMMETRY.map((n, i) => {
     const o = document.createElement('option');
     o.value = String(i); o.textContent = n;
     return o;
@@ -713,6 +630,7 @@ async function poll() {
     if (s.online) {
       offlineStrikes = 0;
       setOffline(false);
+      fillSymmetry(s.config.symmetries ?? ['none']);
     } else if (++offlineStrikes >= 3) {
       setOffline(true,
         `Check it's powered on and on the same network as this computer (${s.config.host}).`);
@@ -750,7 +668,7 @@ async function poll() {
     if (s.device) {
       $('device-name').textContent = s.device.name ?? s.device.product ?? '—';
       $('power').checked = Boolean(s.device.on ?? true);
-      if (s.device.sym != null) $('symmetry').value = String(s.device.sym);
+      if (s.device.sym != null) $('fx-symmetry').value = String(s.device.sym);
       if (s.device.sparkle != null) {
         for (const b of $('sparkle').children) {
           b.classList.toggle('is-on', b.dataset.v === String(s.device.sparkle));

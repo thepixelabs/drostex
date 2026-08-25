@@ -22,7 +22,7 @@ import { dirname } from 'node:path';
 import { exec } from 'node:child_process';
 import { loadConfig } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
-import { ANIMATIONS, PALETTES, iq } from '../src/animations.mjs';
+import { ANIMATIONS, PALETTES, iq, SYMMETRY_NAMES } from '../src/animations.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -122,7 +122,10 @@ const server = http.createServer(async (req, res) => {
           on: dstate?.on, bri: dstate?.bri, sb: dstate?.sb, sparkle: dstate?.sparkle,
           sym: dstate?.seg?.[0]?.sym,
         },
-        config: { host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge },
+        config: {
+          host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge,
+          symmetries: SYMMETRY_NAMES,
+        },
         online: Boolean(dev),
       });
     }
@@ -164,12 +167,6 @@ const server = http.createServer(async (req, res) => {
         });
       }
       return json(res, 200, { value: v, applied: renderer.running ? 'stream' : 'device' });
-    }
-
-    if (p === '/api/audio' && req.method === 'POST') {
-      // Audio arrives from the browser tab, ~25/sec. Loopback, ~60 bytes each.
-      renderer.setAudio(await readBody(req));
-      res.writeHead(204); return res.end();
     }
 
     if (p === '/api/pixels') {

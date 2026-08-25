@@ -13,7 +13,7 @@
  *
  * Usage:
  *   node scripts/blink.mjs [host]
- *   node scripts/blink.mjs 192.168.0.108 --chase
+ *   node scripts/blink.mjs 192.168.1.50 --chase
  */
 
 import dgram from 'node:dgram';

@@ -88,7 +88,10 @@ async function serveStatic(req, res) {
   if (!file.startsWith(WEB)) { res.writeHead(403); return res.end('forbidden'); }
   try {
     const body = await readFile(file);
-    res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream' });
+    res.writeHead(200, {
+      'content-type': MIME[extname(file)] ?? 'application/octet-stream',
+      'cache-control': 'no-store',
+    });
     res.end(body);
   } catch {
     res.writeHead(404); res.end('not found');

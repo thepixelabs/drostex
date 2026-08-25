@@ -22,7 +22,11 @@ const api = async (path, body) => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   } : undefined);
-  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  if (!r.ok) {
+    const err = new Error(`${path}: ${r.status}`);
+    err.status = r.status;
+    throw err;
+  }
   return r.status === 204 ? null : r.json();
 };
 
@@ -615,11 +619,11 @@ function setTally(state, text) {
   $('tally-text').textContent = text;
 }
 
-function setOffline(off, detail) {
-  if (off === !deviceOnline) return;
+function setOffline(off, title, detail) {
   deviceOnline = !off;
   $('offline').hidden = !off;
   document.querySelector('.modifiers').classList.toggle('is-disabled', off);
+  if (title) $('offline-title').textContent = title;
   if (detail) $('offline-detail').textContent = detail;
 }
 
@@ -632,7 +636,7 @@ async function poll() {
       setOffline(false);
       fillSymmetry(s.config.symmetries ?? ['none']);
     } else if (++offlineStrikes >= 3) {
-      setOffline(true,
+      setOffline(true, "Can't reach the cube.",
         `Check it's powered on and on the same network as this computer (${s.config.host}).`);
     }
 
@@ -681,19 +685,34 @@ async function poll() {
         drawSparkline();
       }
     }
-  } catch {
-    if (++offlineStrikes >= 3) {
-      setTally('offline', 'server unreachable');
-      setOffline(true, 'The Drostex server stopped responding. Is it still running?');
+  } catch (e) {
+    if (++offlineStrikes < 3) { setTally('idle', 'reconnecting…'); return; }
+    setTally('offline', 'server unreachable');
+    // A 404 means the server is running older code than this page expects,
+    // which happens whenever the server was left up across an update. That is a
+    // completely different problem from the cube being unplugged, and saying
+    // "stopped responding" for it sends you looking in the wrong place.
+    if (e?.status === 404) {
+      setOffline(true, 'Drostex needs restarting.',
+        'The server is running an older version than this page. Stop it and run npm start again.');
     } else {
-      setTally('idle', 'reconnecting…');
+      setOffline(true, 'Lost the Drostex server.',
+        'The local server stopped responding. Is it still running in your terminal?');
     }
   }
 }
 
 $('retry').addEventListener('click', () => { offlineStrikes = 0; poll(); });
 
-await loadAnimations();
-await renderPresets(await api('presets'));
+try {
+  await loadAnimations();
+  await renderPresets(await api('presets'));
+} catch (e) {
+  setOffline(true,
+    e?.status === 404 ? 'Drostex needs restarting.' : 'Could not start.',
+    e?.status === 404
+      ? 'The server is running an older version than this page. Stop it and run npm start again.'
+      : `Failed to load: ${e.message}`);
+}
 await poll();
 setInterval(poll, 2000);

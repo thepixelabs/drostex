@@ -39,7 +39,7 @@ async function listEffects() {
   if (effectsCache) return effectsCache;
   const all = await device('/json');
   effectsCache = all.effects
-    .map((label, id) => ({ id, label, sound: isSoundReactive(id, label) }))
+    .map((label, id) => ({ id, label, sound: isSoundReactive(id, label), mode: /^Mode:/.test(label) }))
     .filter((e) => e.label && e.label !== '-');
   return effectsCache;
 }

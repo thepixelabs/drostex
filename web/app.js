@@ -565,10 +565,18 @@ let allEffects = [];
 let fxFilter = 'all';
 let fxQuery = '';
 
+const MODE_DESC = {
+  0: 'bright, kaleidoscopic patterns',
+  1: 'slow and calm',
+  2: 'reacts to sound using the cube\u2019s microphone',
+};
+
 async function loadEffects() {
   effectsLoaded = true;
   const { effects, palettes: pals, state } = await api('effects');
-  allEffects = effects;
+  // Modes are playlists; the rest are single effects. Separate lists.
+  allEffects = effects.filter((e) => !/^Mode:/.test(e.label));
+  const modes = effects.filter((e) => /^Mode:/.test(e.label));
   const seg = state?.seg?.[0] ?? {};
 
   const sel = $('palette');
@@ -589,6 +597,23 @@ async function loadEffects() {
 
   $('fx-search').addEventListener('input', (e) => { fxQuery = e.target.value.toLowerCase(); renderEffects(); });
   bindSeg('fx-filter', (v) => { fxFilter = v; renderEffects(); });
+
+  const modeGrid = $('modes');
+  modeGrid.replaceChildren(...modes.map((m) => {
+    const el = card({
+      name: m.label.replace(/^Mode:\s*/, ''),
+      desc: MODE_DESC[m.id] ?? 'a rotating playlist of the cube\u2019s own patterns',
+      onClick: async () => {
+        for (const c of modeGrid.children) c.classList.toggle('is-active', c === el);
+        for (const c of $('effects').children) c.classList.remove('is-active');
+        markActive(null);
+        await api('device/state', { seg: [{ fx: m.id }] });
+      },
+    });
+    el.dataset.fx = m.id;
+    if (seg.fx === m.id) el.classList.add('is-active');
+    return el;
+  }));
 
   renderEffects(seg.fx);
 }
@@ -613,6 +638,7 @@ function renderEffects(activeId) {
       name: e.label,
       onClick: async () => {
         for (const c of grid.children) c.classList.toggle('is-active', c === el);
+        for (const c of $('modes').children) c.classList.remove('is-active');
         markActive(null);      // the server stops our stream; reflect it now
         await api('device/state', { seg: [{ fx: e.id }] });
       },

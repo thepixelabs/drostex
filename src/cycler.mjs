@@ -107,7 +107,10 @@ export class Cycler {
       }
     }
     if (this.pool.startsWith('effects') || this.pool === 'all') {
-      const fx = await listEffects();
+      // Exclude the three "Mode:" entries: they are the firmware's own rotating
+      // playlists, so cycling them alongside single effects means two rotations
+      // fighting over the same LEDs.
+      const fx = (await listEffects()).filter((e) => !e.mode);
       const want = this.pool === 'effects-sound' ? (e) => e.sound
         : this.pool === 'effects-static' ? (e) => !e.sound
         : () => true;

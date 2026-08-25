@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+.pnp.*
+.yarn/
+
+# build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# local runtime state
+.drostex/
+profiles/*.local.json
+*.log
+
+# editor / tooling
+.vscode/
+.idea/
+*.swp
+
+# agent + assistant state — never commit
+.claude/
+.cursor/
+.aider*
+CLAUDE.md
+AGENTS.md
+
+# internal planning + notes — not for the public repo
+plans/
+notes/
+scratch/
+docs/internal/
+*.plan.md
+
+# OS
+.DS_Store
+Thumbs.db

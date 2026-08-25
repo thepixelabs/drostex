@@ -7,8 +7,7 @@
  */
 
 import dgram from 'node:dgram';
-import { ANIMATIONS, makeContext, clamp01, defaultParams,
-         SYMMETRIES, hash } from './animations.mjs';
+import { ANIMATIONS, makeContext, clamp01, defaultParams } from './animations.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -31,12 +30,11 @@ export class Renderer {
     // here rather than per-animation: they are modifiers over whatever is
     // playing, exactly like the firmware's own versions - except these actually
     // reach the 44 addresses that have physical LEDs behind them.
-    this.params = {
-      brightness: 0.85, speed: 1, fps: 40, gamma: 2.2,
-      sparkle: 0,          // 0..1 twinkle density
-      symmetry: 'none',    // index-space fold, see SYMMETRIES
-      audioReact: 0,       // 0..1 how much overall level drives brightness
-    };
+    // Sparkle and symmetry deliberately live on the DEVICE, not here. The
+    // firmware applies both to streamed pixels, and its symmetry modes know the
+    // cube's real geometry - Cubic, Helical, Trigonal - which we never mapped.
+    // Reimplementing them locally would be strictly worse, and duplicated.
+    this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2, audioReact: 0 };
     // Latest audio features from the browser, with the time they arrived so a
     // closed tab decays to silence instead of freezing at its last value.
     this.audio = { level: 0, bass: 0, mid: 0, treble: 0, at: 0 };
@@ -53,6 +51,10 @@ export class Renderer {
     this.buf = Buffer.alloc(config.ledCount * 3);
     this.frames = 0;
     this.startedAt = 0;
+    // Bumped by every stop/play. play() awaits network calls before starting
+    // its loop, and a stop landing during that await would otherwise be undone
+    // when play resumed and set running = true.
+    this.generation = 0;
   }
 
   async connect() {
@@ -187,8 +189,7 @@ export class Renderer {
   }
 
   setParams(p) {
-    if (typeof p.symmetry === 'string' && SYMMETRIES[p.symmetry]) this.params.symmetry = p.symmetry;
-    for (const k of ['sparkle', 'audioReact']) {
+    for (const k of ['audioReact']) {
       const v = Number(p[k]);
       if (Number.isFinite(v)) this.params[k] = clamp01(v);
     }
@@ -205,8 +206,11 @@ export class Renderer {
 
   async play(name) {
     if (!ANIMATIONS[name]) throw new Error(`unknown animation: ${name}`);
+    const gen = ++this.generation;
     await this.connect();
     await this.prepareDevice();
+    // Something else took over while we were waiting on the network.
+    if (gen !== this.generation) return;
     this.animation = name;
     if (!this.running) {
       this.running = true;
@@ -216,6 +220,7 @@ export class Renderer {
   }
 
   async stop({ blank = true, restore = true } = {}) {
+    this.generation++;
     this.running = false;
     this.animation = null;
     if (this.sock && blank) {
@@ -239,10 +244,9 @@ export class Renderer {
       if (!anim) break;
 
       const t = (Date.now() - this.startedAt) / 1000;
-      const { brightness, speed, gamma, sparkle, symmetry, audioReact } = this.params;
+      const { brightness, speed, gamma, audioReact } = this.params;
       const params = this.animParams[name];
       const audio = this.currentAudio();
-      const fold = SYMMETRIES[symmetry] ?? SYMMETRIES.none;
 
       // Overall level lifts or ducks the whole frame. Kept as a multiplier so
       // it composes with whatever per-parameter audio routing the animation
@@ -250,25 +254,10 @@ export class Renderer {
       const gain = 1 - audioReact + audioReact * clamp01(audio.level);
 
       for (let i = 0; i < n; i++) {
-        // Symmetry is applied to the SAMPLING index, so the animation is
-        // evaluated as though the strip were folded. It needs no knowledge of
-        // where any LED physically sits - which is just as well, since that
-        // mapping resisted every attempt to measure it.
-        const src = fold(i, n, perEdge);
-        const rgb = anim.fn(makeContext(src, n, perEdge, t, speed, params, audio));
-
-        let spark = 0;
-        if (sparkle > 0) {
-          // Each address twinkles on its own phase, so they never blink in
-          // unison. Threshold rather than fade, for a hard glint.
-          const ph = hash(i * 12.9898);
-          const s = Math.sin((t * 3.1 + ph * 43.7) % 6.283);
-          spark = s > 1 - sparkle * 0.35 ? Math.pow((s - (1 - sparkle * 0.35)) / (sparkle * 0.35), 0.6) : 0;
-        }
-
+        const rgb = anim.fn(makeContext(i, n, perEdge, t, speed, params, audio));
         for (let k = 0; k < 3; k++) {
           // Gamma last, after brightness, so dimming stays perceptually smooth.
-          const v = clamp01(clamp01(rgb[k]) * gain + spark) * brightness;
+          const v = clamp01(clamp01(rgb[k]) * gain) * brightness;
           this.buf[i * 3 + k] = Math.round(255 * Math.pow(v, gamma));
         }
       }

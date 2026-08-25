@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>Drostex</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%237C5CFC'/><rect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
@@ -13,160 +14,142 @@
   <div class="brand">
     <span class="mark" aria-hidden="true"></span>
     <span class="wordmark">Drostex</span>
+    <span class="device" id="device-name">&mdash;</span>
   </div>
-  <div class="tally" id="tally" data-state="idle">
-    <span class="dot" aria-hidden="true"></span>
-    <span id="tally-text">connecting…</span>
+  <div class="topbar-right">
+    <canvas id="sparkline" width="120" height="22" aria-label="Power draw over time"></canvas>
+    <span class="draw" id="device-power">&mdash;</span>
+    <div class="tally" id="tally" data-state="idle">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="tally-text">connecting&hellip;</span>
+    </div>
   </div>
 </header>
 
+<!-- Modifiers sit outside the tabs on purpose: they apply to everything,
+     whether Drostex is streaming pixels or the cube is running its own effect. -->
+<section class="modifiers" aria-label="Global controls">
+  <label class="switch power">
+    <input type="checkbox" id="power">
+    <span>Power</span>
+  </label>
+
+  <div class="mod mod-wide">
+    <label for="brightness">Brightness <output id="brightness-out">&mdash;</output></label>
+    <input type="range" id="brightness" min="0" max="255" value="150">
+  </div>
+
+  <div class="mod">
+    <label for="sparkle">Sparkle</label>
+    <div class="seg" id="sparkle" role="group" aria-label="Sparkle">
+      <button data-v="0" class="is-on">Off</button>
+      <button data-v="1">Low</button>
+      <button data-v="2">High</button>
+    </div>
+  </div>
+
+  <div class="mod">
+    <label for="symmetry">Symmetry</label>
+    <select id="symmetry"></select>
+  </div>
+
+  <label class="switch">
+    <input type="checkbox" id="sb">
+    <span>Pulse to music</span>
+  </label>
+
+  <p class="mod-note" id="mod-note" hidden>
+    These apply to everything &mdash; your looks and the built-in effects alike.
+    <button class="link" id="mod-note-x">Got it</button>
+  </p>
+</section>
+
 <main>
   <nav class="tabs" role="tablist">
-    <button class="tab is-active" role="tab" aria-selected="true" data-tab="studio">Studio</button>
-    <button class="tab" role="tab" aria-selected="false" data-tab="onboard">Onboard effects</button>
+    <button class="tab is-active" role="tab" aria-selected="true" data-tab="studio">My looks</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="onboard">Built-in effects</button>
   </nav>
 
-  <!-- ── Studio ───────────────────────────────────────────── -->
+  <div class="offline" id="offline" hidden>
+    <strong>Can&rsquo;t reach the cube.</strong>
+    <span id="offline-detail">Check it&rsquo;s powered on and on the same network as this computer.</span>
+    <button class="btn" id="retry">Retry</button>
+  </div>
+
+  <!-- ── My looks ─────────────────────────────────────────── -->
   <section id="panel-studio" class="panel is-active" role="tabpanel">
     <div class="studio">
       <div class="studio-main">
-        <div class="grid" id="animations" aria-label="Animations"></div>
+        <h2 class="section-title">Saved</h2>
+        <div class="grid grid-presets" id="presets"></div>
 
-        <div class="controls">
-          <div class="control">
-            <label for="brightness">Brightness <output id="brightness-out">217</output></label>
-            <input type="range" id="brightness" min="0" max="255" value="217">
-          </div>
-          <div class="control">
+        <h2 class="section-title">Start from a pattern</h2>
+        <div class="grid" id="animations" aria-label="Patterns"></div>
+
+        <div class="playback">
+          <div class="mod mod-wide">
             <label for="speed">Speed <output id="speed-out">1.0&times;</output></label>
             <input type="range" id="speed" min="10" max="300" value="100">
           </div>
-          <div class="control">
+          <div class="mod mod-wide">
             <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
             <input type="range" id="fps" min="10" max="60" value="40">
           </div>
-          <hr class="rule">
-
-          <div class="row-wrap">
-            <span class="field">
-              <label for="symmetry-studio">Symmetry</label>
-              <select id="symmetry-studio"></select>
-            </span>
-            <span class="field" style="flex:1;min-width:150px">
-              <label for="sparkle-studio">Sparkle <output id="sparkle-studio-out">0</output></label>
-              <input type="range" id="sparkle-studio" min="0" max="100" value="0">
-            </span>
-          </div>
-
-          <div class="row-wrap">
-            <button class="btn" id="mic">Enable microphone</button>
-            <span class="field" style="flex:1;min-width:150px">
-              <label for="audio-react">Sound reactivity <output id="audio-react-out">0</output></label>
-              <input type="range" id="audio-react" min="0" max="100" value="0">
-            </span>
-            <span class="meter" id="meter" title="input level"><i></i></span>
-          </div>
-
-          <div class="toggles">
-            <label class="switch">
-              <input type="checkbox" id="sb-studio">
-              <span>Cube&rsquo;s own mic pulse</span>
-            </label>
-            <button class="btn btn-stop" id="stop">Stop &amp; release</button>
-          </div>
+          <button class="btn btn-stop" id="stop">Stop &amp; release</button>
         </div>
       </div>
 
       <aside class="inspector" id="inspector" hidden>
         <div class="inspector-head">
           <strong id="inspector-title">&mdash;</strong>
-          <button class="link" id="reset-params" title="Restore defaults">Reset</button>
+          <span class="inspector-actions">
+            <button class="link" id="shuffle" title="Randomise every setting">Shuffle</button>
+            <button class="link" id="reset-params" title="Restore defaults">Reset</button>
+          </span>
         </div>
+        <p class="save-status" id="save-status" hidden></p>
         <div id="params"></div>
 
-        <div class="inspector-head" style="margin-top:22px">
-          <strong>Saved looks</strong>
-        </div>
         <div class="save-row">
           <input type="text" id="preset-name" placeholder="Name this look" maxlength="60">
           <button class="btn" id="save-preset">Save</button>
         </div>
-        <div id="presets" class="presets"></div>
       </aside>
     </div>
-
-    <p class="hint">
-      Stopping hands the cube back to its own firmware after about 2&nbsp;seconds.
-      Animations keep running if you close this tab &mdash; the pixels are computed
-      by the local process, not the page.
-      <br><br>
-      <strong>Pulse to music</strong> uses the cube&rsquo;s own microphone, not your
-      computer&rsquo;s. Whether it affects streamed animations or only the onboard
-      effects is untested &mdash; play something and see.
-    </p>
   </section>
 
-  <!-- ── Onboard ──────────────────────────────────────────── -->
+  <!-- ── Built-in effects ─────────────────────────────────── -->
   <section id="panel-onboard" class="panel" role="tabpanel">
-    <p class="hint">
-      These run on the cube itself, so they survive closing Drostex entirely.
-      Picking one stops the live stream &mdash; only one source can drive the LEDs.
-    </p>
-
-    <div class="controls" style="margin-bottom:20px">
-      <div class="row-wrap">
-        <label class="switch"><input type="checkbox" id="power"><span>Power</span></label>
-        <label class="switch"><input type="checkbox" id="sb"><span>Pulse to music</span></label>
-        <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>
-        <label class="switch"><input type="checkbox" id="nl"><span>Nightlight</span></label>
+    <div class="filters">
+      <input type="search" id="fx-search" placeholder="Search effects&hellip;" autocomplete="off">
+      <div class="seg" id="fx-filter" role="group" aria-label="Filter effects">
+        <button data-v="all" class="is-on">All</button>
+        <button data-v="sound">Sound-reactive</button>
+        <button data-v="static">Static</button>
       </div>
+      <span class="field">
+        <label for="palette">Palette</label>
+        <select id="palette"></select>
+      </span>
+    </div>
 
-      <div class="control">
-        <label for="dev-bri">Cube brightness <output id="dev-bri-out">&mdash;</output></label>
-        <input type="range" id="dev-bri" min="1" max="255" value="150">
-      </div>
-      <div class="control">
+    <div class="playback">
+      <div class="mod mod-wide">
         <label for="sx">Effect speed <output id="sx-out">&mdash;</output></label>
         <input type="range" id="sx" min="0" max="255" value="128">
       </div>
-      <div class="control">
-        <label for="ix">Effect intensity <output id="ix-out">&mdash;</output></label>
+      <div class="mod mod-wide">
+        <label for="ix">Intensity <output id="ix-out">&mdash;</output></label>
         <input type="range" id="ix" min="0" max="255" value="128">
       </div>
-
-      <div class="row-wrap">
-        <span class="field">
-          <label for="palette">Palette</label>
-          <select id="palette"></select>
-        </span>
-        <span class="field">
-          <label for="symmetry">Symmetry</label>
-          <select id="symmetry"></select>
-        </span>
-        <span class="field">
-          <label for="sparkle">Sparkle</label>
-          <select id="sparkle">
-            <option value="0">Off</option>
-            <option value="1">Low</option>
-            <option value="2">High</option>
-          </select>
-        </span>
-        <button class="btn btn-warp" id="warp">Warp drive</button>
-      </div>
+      <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>
+      <label class="switch"><input type="checkbox" id="nl"><span>Nightlight</span></label>
+      <button class="btn btn-warp" id="warp" title="A one-shot animation built into the cube">Warp drive</button>
     </div>
 
     <div class="grid grid-dense" id="effects" aria-label="Built-in effects"></div>
   </section>
-
 </main>
-
-<footer class="statusbar">
-  <span id="device-name">—</span>
-  <span class="sep">·</span>
-  <span id="device-pixels">—</span>
-  <span class="sep">·</span>
-  <span id="device-power">—</span>
-</footer>
 
 <script src="/app.js" type="module"></script>
 </body>

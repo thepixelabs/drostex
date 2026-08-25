@@ -22,7 +22,7 @@ import { dirname } from 'node:path';
 import { exec } from 'node:child_process';
 import { loadConfig } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
-import { ANIMATIONS, SYMMETRY_NAMES } from '../src/animations.mjs';
+import { ANIMATIONS, PALETTES, iq } from '../src/animations.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -40,6 +40,16 @@ async function loadPresets() {
 async function savePresets(list) {
   await writeFile(PRESETS, JSON.stringify(list, null, 2) + '\n');
 }
+
+/**
+ * Whether an effect needs sound to do anything.
+ *
+ * The firmware exposes no flag for this, but the 31 sound-reactive effects sit
+ * in a contiguous block and their names cluster unmistakably. Worth marking,
+ * because they look broken in a silent room.
+ */
+const SOUND_WORDS = /sonic|sound|spectrogram|harmonic|resonan|aural|acoustic|melodic|rhythmic|tonal|symphon|beat|ultrasonic|hypersonic|synesthesia|light sound/i;
+const isSoundReactive = (id, label) => id >= 120 || SOUND_WORDS.test(label);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -97,18 +107,19 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (p === '/api/status') {
-      let dev = null;
-      try { dev = await device('/json/info'); } catch { /* cube offline */ }
+      let dev = null, dstate = null;
+      try {
+        [dev, dstate] = await Promise.all([device('/json/info'), device('/json/state')]);
+      } catch { /* cube offline */ }
       return json(res, 200, {
         renderer: renderer.status(),
         device: dev && {
           name: dev.name, product: dev.product, brand: dev.brand,
           live: dev.live, count: dev.leds?.count, power: dev.leds?.pwr,
+          on: dstate?.on, bri: dstate?.bri, sb: dstate?.sb, sparkle: dstate?.sparkle,
+          sym: dstate?.seg?.[0]?.sym,
         },
-        config: {
-          host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge,
-          symmetries: SYMMETRY_NAMES,
-        },
+        config: { host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge },
         online: Boolean(dev),
       });
     }
@@ -119,6 +130,37 @@ const server = http.createServer(async (req, res) => {
         params: a.params ?? {},
         values: renderer.animParams[id],
       })));
+    }
+
+    if (p === '/api/palettes') {
+      // Gradient stops per palette, so the UI can show what each one looks like
+      // instead of listing names. Computed here to keep the iq() maths in one
+      // place rather than reimplemented client-side.
+      return json(res, 200, Object.fromEntries(Object.entries(PALETTES).map(([name, c]) => [
+        name,
+        Array.from({ length: 7 }, (_, i) =>
+          iq(i / 6, ...c).map((x) => Math.round(x * 255))),
+      ])));
+    }
+
+    if (p === '/api/brightness' && req.method === 'POST') {
+      // ONE brightness control, whose meaning depends on what is driving the
+      // LEDs. Two separate sliders fought each other: the device one would
+      // overwrite the 255 that streaming pins it to, breaking the local
+      // multiplier's range, and Stop would then revert the user's edit.
+      const { value } = await readBody(req);
+      const v = Math.min(255, Math.max(0, Number(value) || 0));
+      if (renderer.running) {
+        renderer.setParams({ brightness: v / 255 });
+      } else {
+        renderer.savedBrightness = v;
+        await device('/json/state', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ bri: v }),
+        });
+      }
+      return json(res, 200, { value: v, applied: renderer.running ? 'stream' : 'device' });
     }
 
     if (p === '/api/audio' && req.method === 'POST') {
@@ -213,6 +255,14 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (p === '/api/warp' && req.method === 'POST') {
+      // Streaming would overwrite the warp animation on the very next frame,
+      // making the button look broken. Release the LEDs first.
+      //
+      // Unconditional on purpose: `running` is still false while a play() is
+      // awaiting the network, so a guarded stop would skip exactly the case
+      // that needs cancelling, and play would start a loop straight over the
+      // warp. stop() bumps the generation, which is what cancels it.
+      await renderer.stop({ blank: false });
       // One-shot vendor animation with a 15s cooldown in their own UI.
       return json(res, 200, await device('/json/state', {
         method: 'POST',
@@ -226,7 +276,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         // The firmware pads its table with '-' placeholders; only real entries
         // are worth showing.
-        effects: all.effects.map((label, id) => ({ id, label }))
+        effects: all.effects.map((label, id) => ({ id, label, sound: isSoundReactive(id, label) }))
           .filter((e) => e.label && e.label !== '-'),
         palettes: all.palettes.map((label, id) => ({ id, label }))
           .filter((p2) => p2.label && p2.label !== '-'),

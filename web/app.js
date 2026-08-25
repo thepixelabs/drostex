@@ -1,12 +1,21 @@
 /**
  * Drostex UI.
  *
- * Deliberately thin. The server owns the pixels and the UDP socket, so this
- * page only ever sends control messages and reflects state back. That is what
- * lets an animation survive closing the tab.
+ * Thin by design: the server owns the pixels and the UDP socket, so this page
+ * only sends control messages and reflects state back. That is what lets an
+ * animation survive closing the tab.
+ *
+ * Structure follows one distinction the hardware forced on us. There are two
+ * PIXEL SOURCES - our streamed animations, or the cube's own firmware effects -
+ * and exactly one drives the LEDs at a time. But brightness, sparkle, symmetry
+ * and sound-reactive are MODIFIERS that apply to whichever is running. Filing
+ * the modifiers inside an "onboard" tab made them look like they only worked
+ * there, which was the source of a genuine "why doesn't this apply to my
+ * animations?" - so they live in a rail outside the tabs.
  */
 
 const $ = (id) => document.getElementById(id);
+
 const api = async (path, body) => {
   const r = await fetch(`/api/${path}`, body ? {
     method: 'POST',
@@ -14,12 +23,20 @@ const api = async (path, body) => {
     body: JSON.stringify(body),
   } : undefined);
   if (!r.ok) throw new Error(`${path}: ${r.status}`);
-  return r.json();
+  return r.status === 204 ? null : r.json();
 };
 
-let current = null;      // active animation id
+const debounce = (fn, ms) => {
+  let t = null;
+  return (...a) => { if (t) clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+};
+
+let current = null;        // playing animation id
+let schemas = {};          // id -> { label, desc, params, values }
+let palettes = {};         // name -> [[r,g,b] x7]
 let effectsLoaded = false;
 let brightnessSynced = false;
+let deviceOnline = true;
 
 /* ── tabs ─────────────────────────────────────────────────── */
 for (const tab of document.querySelectorAll('.tab')) {
@@ -36,24 +53,63 @@ for (const tab of document.querySelectorAll('.tab')) {
   });
 }
 
-/* ── studio ───────────────────────────────────────────────── */
+/* ── helpers ──────────────────────────────────────────────── */
+const css = (stops) => `linear-gradient(90deg, ${stops.map((c) => `rgb(${c.join(',')})`).join(',')})`;
+const fmt = (v) => (Number.isInteger(v) ? String(v) : Number(v).toFixed(2));
 
-let schemas = {};   // id -> { params, values }
+/** A gradient that hints at what a pattern looks like, from its own defaults. */
+function swatchFor(spec) {
+  const v = spec.values ?? {};
+  if (v.paletteName && palettes[v.paletteName]) return css(palettes[v.paletteName]);
+  const cols = Object.entries(spec.params ?? {})
+    .filter(([, d]) => d.type === 'color')
+    .map(([k]) => v[k]);
+  if (cols.length >= 2) return `linear-gradient(90deg, ${cols.join(',')})`;
+  if (cols.length === 1) return `linear-gradient(90deg, #0A0B0F, ${cols[0]})`;
+  return palettes.spectrum ? css(palettes.spectrum) : 'linear-gradient(90deg,#444,#888)';
+}
 
+function card({ cls = '', swatch, name, desc, onClick }) {
+  const el = document.createElement('button');
+  el.className = `card ${cls}`.trim();
+  if (swatch) {
+    const s = document.createElement('span');
+    s.className = 'swatch';
+    s.style.setProperty('--sw', swatch);
+    el.appendChild(s);
+  }
+  const n = document.createElement('span');
+  n.className = 'name';
+  n.textContent = name;
+  el.appendChild(n);
+  if (desc) {
+    const d = document.createElement('span');
+    d.className = 'desc';
+    d.textContent = desc;
+    el.appendChild(d);
+  }
+  if (onClick) el.addEventListener('click', onClick);
+  return el;
+}
+
+/* ── patterns ─────────────────────────────────────────────── */
 async function loadAnimations() {
+  palettes = await api('palettes');
   const list = await api('animations');
   schemas = Object.fromEntries(list.map((a) => [a.id, a]));
+
   const grid = $('animations');
-  grid.replaceChildren(...list.map((a) => {
-    const el = document.createElement('button');
-    el.className = 'card';
+  const cards = list.filter((a) => a.id !== 'custom').map((a) => {
+    const el = card({ swatch: swatchFor(a), name: a.label, desc: a.desc, onClick: () => play(a.id) });
     el.dataset.id = a.id;
-    el.innerHTML = `<span class="name"></span><span class="desc"></span>`;
-    el.querySelector('.name').textContent = a.label;
-    el.querySelector('.desc').textContent = a.desc;
-    el.addEventListener('click', () => play(a.id));
     return el;
-  }));
+  });
+
+  // `custom` is different in kind - a small signal chain rather than a finished
+  // pattern - so it gets a create-affordance instead of blending into the grid.
+  const add = card({ cls: 'card-add', name: '+ Build a look', onClick: () => play('custom') });
+  add.dataset.id = 'custom';
+  grid.replaceChildren(add, ...cards);
 }
 
 async function play(name) {
@@ -77,87 +133,172 @@ function markActive(name) {
   $('inspector-title').textContent = schemas[name]?.label ?? name;
 }
 
-/**
- * Builds the parameter controls from the animation's declared schema.
- *
- * Nothing here knows about any particular animation - adding a knob is a
- * one-line change in animations.mjs and appears here automatically. This is the
- * same contract the node editor will use for exposed node inputs.
- */
+/* ── parameter inspector ──────────────────────────────────── */
+
+/* Grouping for the animations with enough parameters to need it. Anything with
+   four or fewer is left ungrouped - headers over three controls is chrome for
+   its own sake. */
+const GROUPS = {
+  custom: {
+    Shape: ['space', 'wave', 'cycles', 'rate'],
+    Colour: ['colorMode', 'paletteName', 'colorA', 'colorB', 'hue'],
+    Range: ['contrast', 'floor'],
+    Sound: ['audioBand', 'audioAmount'],
+  },
+  aurora: { Colour: ['colorA', 'colorB'], Motion: ['scale', 'rate', 'contrast'] },
+  breathe: { Colour: ['colorA', 'colorB', 'blend'], Motion: ['floor', 'shape'] },
+  sparkle: { Colour: ['base', 'spark'], Motion: ['density', 'rate'] },
+};
+
+let saveStatusTimer = null;
+function flagUnsaved(msg) {
+  const el = $('save-status');
+  el.hidden = false;
+  el.textContent = msg;
+  clearTimeout(saveStatusTimer);
+  saveStatusTimer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
 function buildInspector(name) {
   const spec = schemas[name];
   const host = $('params');
   if (!spec) { host.replaceChildren(); return; }
 
   const values = { ...spec.values };
-  const push = debounce(() => api('anim-params', { name, values }), 60);
+  // Failures here used to be silent: the slider moved, the cube never heard
+  // about it, and nothing said so.
+  const push = debounce(() => {
+    api('anim-params', { name, values })
+      .then(() => { spec.values = { ...values }; })
+      .catch(() => flagUnsaved('Not applied — connection lost'));
+  }, 60);
 
-  host.replaceChildren(...Object.entries(spec.params).map(([key, def]) => {
-    const wrap = document.createElement('div');
-    wrap.className = 'param';
+  const groups = GROUPS[name];
+  const order = groups
+    ? Object.entries(groups).map(([g, keys]) => [g, keys.filter((k) => spec.params[k])])
+    : [[null, Object.keys(spec.params)]];
 
-    const label = document.createElement('label');
-    label.textContent = def.label ?? key;
-    label.htmlFor = `p-${key}`;
-    const out = document.createElement('output');
-    label.appendChild(out);
-    wrap.appendChild(label);
+  const nodes = [];
+  for (const [group, keys] of order) {
+    if (!keys.length) continue;
+    if (group) {
+      const h = document.createElement('p');
+      h.className = 'param-group';
+      h.textContent = group;
+      nodes.push(h);
+    }
+    for (const key of keys) nodes.push(paramControl(key, spec.params[key], values, push));
+  }
+  host.replaceChildren(...nodes);
+}
 
-    let input;
-    if (def.type === 'number') {
-      input = document.createElement('input');
-      input.type = 'range';
-      input.min = def.min; input.max = def.max; input.step = def.step ?? 0.01;
-      input.value = values[key];
+function paramControl(key, def, values, push) {
+  const wrap = document.createElement('div');
+  wrap.className = 'param';
+
+  const label = document.createElement('label');
+  label.textContent = def.label ?? key;
+  label.htmlFor = `p-${key}`;
+  const out = document.createElement('output');
+  label.appendChild(out);
+  wrap.appendChild(label);
+
+  const addHint = () => {
+    if (!def.hint) return;
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = def.hint;
+    wrap.appendChild(p);
+  };
+
+  if (def.type === 'number') {
+    const input = document.createElement('input');
+    input.type = 'range'; input.id = `p-${key}`;
+    input.min = def.min; input.max = def.max; input.step = def.step ?? 0.01;
+    input.value = values[key];
+    out.textContent = fmt(values[key]);
+    input.addEventListener('input', () => {
+      values[key] = Number(input.value);
       out.textContent = fmt(values[key]);
-      input.addEventListener('input', () => {
-        values[key] = Number(input.value);
-        out.textContent = fmt(values[key]);
+      push();
+    });
+    wrap.appendChild(input);
+
+  } else if (def.type === 'color') {
+    const row = document.createElement('div');
+    row.className = 'param-color';
+    const btn = document.createElement('span');
+    btn.className = 'swatch-btn';
+    const fill = document.createElement('span');
+    fill.className = 'swatch-fill';
+    const input = document.createElement('input');
+    input.type = 'color'; input.id = `p-${key}`; input.value = values[key];
+    const hex = document.createElement('input');
+    hex.type = 'text'; hex.className = 'hex'; hex.value = values[key];
+
+    const apply = (v, from) => {
+      if (!/^#[0-9a-f]{6}$/i.test(v)) return;
+      values[key] = v;
+      fill.style.background = v;
+      // Glow in the colour itself: on a near-black UI this reads as light.
+      btn.style.boxShadow = `0 0 14px ${v}66`;
+      if (from !== 'picker') input.value = v;
+      if (from !== 'hex') hex.value = v;
+      push();
+    };
+    apply(values[key], null);
+    input.addEventListener('input', () => apply(input.value, 'picker'));
+    hex.addEventListener('change', () => apply(hex.value.trim(), 'hex'));
+
+    btn.append(fill, input);
+    row.append(btn, hex);
+    wrap.appendChild(row);
+
+  } else if (def.type === 'boolean') {
+    const sw = document.createElement('label');
+    sw.className = 'switch';
+    const input = document.createElement('input');
+    input.type = 'checkbox'; input.id = `p-${key}`; input.checked = Boolean(values[key]);
+    input.addEventListener('change', () => { values[key] = input.checked; push(); });
+    sw.append(input, document.createElement('span'));
+    wrap.appendChild(sw);
+
+  } else if (key === 'paletteName') {
+    // A palette's whole point is what it looks like; a dropdown of names throws
+    // that away.
+    const strip = document.createElement('div');
+    strip.className = 'palettes';
+    strip.replaceChildren(...def.options.map((nm) => {
+      const b = document.createElement('button');
+      b.className = 'pal-btn';
+      b.style.background = palettes[nm] ? css(palettes[nm]) : '#444';
+      b.title = nm;
+      b.setAttribute('aria-label', nm);
+      b.setAttribute('aria-pressed', String(values[key] === nm));
+      b.addEventListener('click', () => {
+        values[key] = nm;
+        for (const s of strip.children) s.setAttribute('aria-pressed', String(s === b));
         push();
       });
-    } else if (def.type === 'color') {
-      input = document.createElement('input');
-      input.type = 'color';
-      input.value = values[key];
-      input.addEventListener('input', () => { values[key] = input.value; push(); });
-    } else if (def.type === 'boolean') {
-      const sw = document.createElement('label');
-      sw.className = 'switch';
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = Boolean(values[key]);
-      input.addEventListener('change', () => { values[key] = input.checked; push(); });
-      sw.append(input, document.createElement('span'));
-      wrap.appendChild(sw);
-      if (def.hint) wrap.appendChild(hintEl(def.hint));
-      return wrap;
-    } else {
-      input = document.createElement('select');
-      input.replaceChildren(...def.options.map((o) => {
-        const el = document.createElement('option');
-        el.value = o; el.textContent = o;
-        return el;
-      }));
-      input.value = values[key];
-      input.addEventListener('change', () => { values[key] = input.value; push(); });
-    }
-    input.id = `p-${key}`;
-    wrap.appendChild(input);
-    if (def.hint) wrap.appendChild(hintEl(def.hint));
-    return wrap;
-  }));
-}
+      return b;
+    }));
+    wrap.appendChild(strip);
 
-const fmt = (v) => (Number.isInteger(v) ? String(v) : Number(v).toFixed(2));
-function hintEl(text) {
-  const p = document.createElement('p');
-  p.className = 'hint';
-  p.textContent = text;
-  return p;
-}
-function debounce(fn, ms) {
-  let t = null;
-  return (...a) => { if (t) clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+  } else {
+    const input = document.createElement('select');
+    input.id = `p-${key}`;
+    input.replaceChildren(...def.options.map((o) => {
+      const el = document.createElement('option');
+      el.value = o; el.textContent = o;
+      return el;
+    }));
+    input.value = values[key];
+    input.addEventListener('change', () => { values[key] = input.value; push(); });
+    wrap.appendChild(input);
+  }
+
+  addHint();
+  return wrap;
 }
 
 $('reset-params').addEventListener('click', async () => {
@@ -167,43 +308,74 @@ $('reset-params').addEventListener('click', async () => {
   buildInspector(current);
 });
 
+/* Randomise-then-tune is the shortest path from "adjusting something" to
+   "making something", and every parameter already declares its own range. */
+$('shuffle').addEventListener('click', async () => {
+  if (!current) return;
+  const spec = schemas[current];
+  const values = {};
+  for (const [k, d] of Object.entries(spec.params)) {
+    if (d.type === 'number') {
+      const raw = d.min + Math.random() * (d.max - d.min);
+      values[k] = d.step >= 1 ? Math.round(raw) : Number(raw.toFixed(3));
+    } else if (d.type === 'boolean') {
+      values[k] = Math.random() < 0.5;
+    } else if (d.type === 'select') {
+      values[k] = d.options[Math.floor(Math.random() * d.options.length)];
+    } else if (d.type === 'color') {
+      values[k] = '#' + Array.from({ length: 3 }, () =>
+        Math.floor(60 + Math.random() * 195).toString(16).padStart(2, '0')).join('');
+    }
+  }
+  const res = await api('anim-params', { name: current, values });
+  spec.values = res.values;
+  buildInspector(current);
+});
+
 $('stop').addEventListener('click', async () => {
   markActive(null);
   await api('stop', {});
 });
 
-/* ── presets ──────────────────────────────────────────────── */
-
+/* ── saved looks ──────────────────────────────────────────── */
 async function renderPresets(list) {
   const host = $('presets');
   if (!list.length) {
-    host.replaceChildren(Object.assign(document.createElement('p'),
-      { className: 'empty', textContent: 'Nothing saved yet.' }));
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'Nothing saved yet. Pick a pattern below, adjust it, then Save.';
+    host.replaceChildren(p);
     return;
   }
-  host.replaceChildren(...list.map((p) => {
-    const row = document.createElement('div');
-    row.className = 'preset';
-    const load = document.createElement('button');
-    load.className = 'load';
-    load.textContent = p.name;
-    load.addEventListener('click', async () => {
-      const st = await api('presets/load', { id: p.id });
-      schemas[st.animation].values = st.animParams;
-      markActive(st.animation);
-      buildInspector(st.animation);
-      syncPlayback(st);
+  host.replaceChildren(...list.map((preset) => {
+    const spec = schemas[preset.animation];
+    const el = card({
+      cls: 'preset',
+      swatch: spec ? swatchFor({ params: spec.params, values: preset.values }) : undefined,
+      name: preset.name,
+      onClick: async () => {
+        const st = await api('presets/load', { id: preset.id });
+        schemas[st.animation].values = st.animParams;
+        markActive(st.animation);
+        buildInspector(st.animation);
+        syncPlayback(st);
+      },
     });
     const meta = document.createElement('span');
     meta.className = 'meta';
-    meta.textContent = p.animation;
+    meta.textContent = spec?.label ?? preset.animation;
+    el.appendChild(meta);
+
     const del = document.createElement('button');
     del.className = 'del';
-    del.textContent = '\u00d7';
+    del.textContent = '×';
     del.title = 'Delete';
-    del.addEventListener('click', async () => renderPresets(await api('presets', { delete: p.id })));
-    row.append(load, meta, del);
-    return row;
+    del.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      renderPresets(await api('presets', { delete: preset.id }));
+    });
+    el.appendChild(del);
+    return el;
   }));
 }
 
@@ -218,302 +390,268 @@ $('preset-name').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') $('save-preset').click();
 });
 
-/* ── playback sliders ─────────────────────────────────────── */
+/* ── modifiers rail ───────────────────────────────────────── */
 
-/* Brightness is 0-255 to match the vendor app, so a number here means the same
-   thing it does there. It is applied locally rather than on the device, because
-   the device scales realtime pixels by its own brightness and would clip our
-   range - but the units are theirs. */
-const params = () => ({
-  brightness: Number($('brightness').value) / 255,
-  speed: Number($('speed').value) / 100,
-  fps: Number($('fps').value),
+/* One brightness control. There used to be two - a local multiplier and the
+   device's own - and they fought: streaming pins the device to 255 so the
+   multiplier has full range, the device slider would undo that, and Stop then
+   reverted the user's edit. The server routes this to whichever is driving. */
+const brightness = $('brightness');
+brightness.addEventListener('input', () => {
+  brightnessSynced = true;
+  $('brightness-out').textContent = brightness.value;
+  pushBrightness();
 });
+const pushBrightness = debounce(() => {
+  api('brightness', { value: Number(brightness.value) }).catch(() => {});
+}, 90);
 
-function bindSlider(id, format) {
-  const el = $(id);
-  const out = $(`${id}-out`);
-  const sync = () => { out.textContent = format(Number(el.value)); };
-  el.addEventListener('input', () => {
-    if (id === 'brightness') brightnessSynced = true; // their choice now wins
-    sync();
-    api('params', params());
+$('power').addEventListener('change', (e) => api('device/state', { on: e.target.checked }));
+$('sb').addEventListener('change', (e) => api('device/state', { sb: e.target.checked }));
+
+function bindSeg(id, onPick) {
+  const host = $(id);
+  host.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    for (const x of host.children) x.classList.toggle('is-on', x === b);
+    onPick(b.dataset.v);
   });
-  sync();
 }
-bindSlider('brightness', (v) => String(v));
-bindSlider('speed', (v) => `${(v / 100).toFixed(1)}\u00d7`);
-bindSlider('fps', (v) => `${v} fps`);
+bindSeg('sparkle', (v) => api('device/state', { sparkle: Number(v) }));
 
-/* ── global modifiers ─────────────────────────────────────
- *
- * Sparkle and symmetry exist in the firmware too, but those operate on its own
- * effect renderer. These are ours, applied to the streamed pixels, which means
- * continuous control rather than three fixed levels and they work on every
- * animation here.
- */
-
-function bindModifier(id, format, key, scale = 1) {
-  const el = $(id);
-  const out = $(`${id}-out`);
-  const sync = () => { out.textContent = format(Number(el.value)); };
-  el.addEventListener('input', () => {
-    sync();
-    api('params', { [key]: Number(el.value) / scale });
-  });
-  sync();
-}
-bindModifier('sparkle-studio', (v) => String(v), 'sparkle', 100);
-bindModifier('audio-react', (v) => String(v), 'audioReact', 100);
-
-function fillSymmetry(names) {
-  const el = $('symmetry-studio');
-  if (el.dataset.filled) return;
-  el.dataset.filled = '1';
-  const pretty = { none: 'None', reverse: 'Reverse', mirror: 'Mirror',
-                   cyclic2: 'Cyclic ×2', cyclic4: 'Cyclic ×4', edgeMirror: 'Edge mirror' };
-  el.replaceChildren(...names.map((n) => {
+const SYMMETRY_LABELS = ['Default', 'None', 'Cubic', 'Helical', 'Trigonal',
+                         'Mirror', 'Vertex', 'Inversion', 'Cyclic'];
+(() => {
+  const el = $('symmetry');
+  el.replaceChildren(...SYMMETRY_LABELS.map((n, i) => {
     const o = document.createElement('option');
-    o.value = n; o.textContent = pretty[n] ?? n;
+    o.value = String(i); o.textContent = n;
     return o;
   }));
-  el.addEventListener('change', () => api('params', { symmetry: el.value }));
+  el.addEventListener('change', () => api('device/state', { seg: [{ sym: Number(el.value) }] }));
+})();
+
+if (!localStorage.getItem('drostex.modnote')) {
+  $('mod-note').hidden = false;
+  $('mod-note-x').addEventListener('click', () => {
+    localStorage.setItem('drostex.modnote', '1');
+    $('mod-note').hidden = true;
+  });
 }
 
-/* ── microphone ───────────────────────────────────────────
- *
- * The cube has its own mic, but its sound mode only drives the firmware's
- * effects. To make OUR animations react we need audio here, so the tab
- * captures it and ships features - not samples - to the server at ~25Hz.
- * About 60 bytes a message over loopback.
- *
- * Only runs while the tab is open. The renderer fades audio to silence after
- * ~1.5s of nothing, so closing the tab degrades gracefully instead of freezing
- * the last loud frame.
- */
-let micStream = null, micTimer = null;
-
-async function toggleMic() {
-  const btn = $('mic');
-  if (micStream) {
-    clearInterval(micTimer);
-    micStream.getTracks().forEach((t) => t.stop());
-    micStream = null;
-    btn.textContent = 'Enable microphone';
-    btn.classList.remove('is-on');
-    $('meter').firstElementChild.style.width = '0%';
-    api('audio', { level: 0, bass: 0, mid: 0, treble: 0 });
-    return;
-  }
-
-  try {
-    micStream = await navigator.mediaDevices.getUserMedia({
-      // Every one of these would fight us: they are tuned for speech, and would
-      // duck exactly the music we want to follow.
-      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-    });
-  } catch {
-    btn.textContent = 'Microphone blocked';
-    return;
-  }
-
-  const ctx = new AudioContext();
-  const src = ctx.createMediaStreamSource(micStream);
-  const an = ctx.createAnalyser();
-  an.fftSize = 1024;
-  an.smoothingTimeConstant = 0.6;
-  src.connect(an);
-
-  const bins = new Uint8Array(an.frequencyBinCount);
-  const hz = ctx.sampleRate / an.fftSize;
-  const band = (lo, hi) => {
-    const a = Math.max(1, Math.floor(lo / hz)), b = Math.min(bins.length - 1, Math.ceil(hi / hz));
-    let sum = 0;
-    for (let i = a; i <= b; i++) sum += bins[i];
-    return sum / ((b - a + 1) * 255);
-  };
-
-  // Running peak with slow decay, so quiet rooms and loud ones both fill the
-  // range. Without it the useful part of the signal sits in the bottom tenth.
-  let peak = 0.15;
-  btn.textContent = 'Microphone on';
-  btn.classList.add('is-on');
-
-  micTimer = setInterval(() => {
-    an.getByteFrequencyData(bins);
-    const raw = { bass: band(20, 250), mid: band(250, 2000), treble: band(2000, 8000) };
-    const level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
-    peak = Math.max(level, peak * 0.995, 0.05);
-    const norm = (x) => Math.min(1, x / peak);
-    const payload = { level: norm(level), bass: norm(raw.bass), mid: norm(raw.mid), treble: norm(raw.treble) };
-    $('meter').firstElementChild.style.width = `${Math.round(payload.level * 100)}%`;
-    api('audio', payload).catch(() => {});
-  }, 40);
+/* ── playback ─────────────────────────────────────────────── */
+function bindSlider(id, format, key, scale) {
+  const el = $(id);
+  const out = $(`${id}-out`);
+  const sync = () => { out.textContent = format(Number(el.value)); };
+  el.addEventListener('input', () => {
+    sync();
+    api('params', { [key]: Number(el.value) / scale }).catch(() => {});
+  });
+  sync();
 }
-$('mic').addEventListener('click', toggleMic);
+bindSlider('speed', (v) => `${(v / 100).toFixed(1)}×`, 'speed', 100);
+bindSlider('fps', (v) => `${v} fps`, 'fps', 1);
 
 function syncPlayback(st) {
-  const b = Math.round(st.params.brightness * 255);
-  $('brightness').value = String(b);
-  $('brightness-out').textContent = String(b);
   $('speed').value = String(Math.round(st.params.speed * 100));
-  $('speed-out').textContent = `${st.params.speed.toFixed(1)}\u00d7`;
+  $('speed-out').textContent = `${st.params.speed.toFixed(1)}×`;
+  const b = Math.round(st.params.brightness * 255);
+  brightness.value = String(b);
+  $('brightness-out').textContent = String(b);
 }
 
-/* ── onboard effects & device controls ────────────────────
- *
- * Everything here is a control-plane call: the cube's own firmware does the
- * rendering, so these survive closing Drostex. `sb`, `sparkle` and `warp` are
- * vendor additions outside WLED's usual schema, found by reading the cube's
- * own web UI - they are not documented anywhere.
- */
-
-const SYMMETRY = ['Default', 'None', 'Cubic', 'Helical', 'Trigonal',
-                  'Mirror', 'Vertex', 'Inversion', 'Cyclic'];
-
-const setState = (body) => api('device/state', body);
-const setSeg = (patch) => setState({ seg: [patch] });
+/* ── built-in effects ─────────────────────────────────────── */
+let allEffects = [];
+let fxFilter = 'all';
+let fxQuery = '';
 
 async function loadEffects() {
   effectsLoaded = true;
-  const { effects, palettes, state } = await api('effects');
+  const { effects, palettes: pals, state } = await api('effects');
+  allEffects = effects;
   const seg = state?.seg?.[0] ?? {};
 
-  const fill = (el, items, value) => {
-    el.replaceChildren(...items.map((it, i) => {
-      const o = document.createElement('option');
-      o.value = it.id ?? i;
-      o.textContent = it.label ?? it;
-      return o;
-    }));
-    if (value != null) el.value = String(value);
-  };
-
-  fill($('palette'), palettes, seg.pal);
-  fill($('symmetry'), SYMMETRY, seg.sym ?? 0);
-
-  $('palette').addEventListener('change', (e) => setSeg({ pal: Number(e.target.value) }));
-  $('symmetry').addEventListener('change', (e) => setSeg({ sym: Number(e.target.value) }));
-  $('sparkle').addEventListener('change', (e) => setState({ sparkle: Number(e.target.value) }));
-
-  $('power').addEventListener('change', (e) => setState({ on: e.target.checked }));
-  $('psd').addEventListener('change', (e) => setSeg({ psd: e.target.checked }));
-  $('nl').addEventListener('change', (e) => setState({ nl: { on: e.target.checked } }));
-
-  // The same underlying setting, surfaced in both tabs - keep them in step.
-  for (const id of ['sb', 'sb-studio']) {
-    $(id).addEventListener('change', (e) => {
-      const on = e.target.checked;
-      $('sb').checked = on;
-      $('sb-studio').checked = on;
-      setState({ sb: on });
-    });
-  }
-
-  // Vendor one-shot with a 15s cooldown in their own UI; mirror that so the
-  // button cannot be hammered into a queue of overlapping animations.
-  $('warp').addEventListener('click', async () => {
-    const b = $('warp');
-    b.disabled = true;
-    try { await api('warp', {}); } finally {
-      setTimeout(() => { b.disabled = false; }, 15000);
-    }
-  });
-
-  bindDeviceSlider('dev-bri', (v) => `${Math.round(v / 255 * 100)}%`, (v) => setState({ bri: v }), seg, state?.bri);
-  bindDeviceSlider('sx', (v) => String(v), (v) => setSeg({ sx: v }), seg, seg.sx);
-  bindDeviceSlider('ix', (v) => String(v), (v) => setSeg({ ix: v }), seg, seg.ix);
-
-  const grid = $('effects');
-  grid.replaceChildren(...effects.map((e) => {
-    const el = document.createElement('button');
-    el.className = 'card compact';
-    el.dataset.fx = e.id;
-    el.innerHTML = `<span class="name"></span>`;
-    el.querySelector('.name').textContent = e.label;
-    el.addEventListener('click', async () => {
-      for (const c of grid.children) c.classList.toggle('is-active', c === el);
-      markActive(null); // the server stops the stream; reflect that immediately
-      await setSeg({ fx: e.id });
-    });
-    return el;
+  const sel = $('palette');
+  sel.replaceChildren(...pals.map((p) => {
+    const o = document.createElement('option');
+    o.value = p.id; o.textContent = p.label;
+    return o;
   }));
-  grid.querySelector(`[data-fx="${seg.fx}"]`)?.classList.add('is-active');
+  if (seg.pal != null) sel.value = String(seg.pal);
+  sel.addEventListener('change', () => api('device/state', { seg: [{ pal: Number(sel.value) }] }));
 
-  // Reflect current device state in the toggles.
-  $('power').checked = Boolean(state?.on);
-  $('psd').checked = Boolean(seg.psd);
-  $('nl').checked = Boolean(state?.nl?.on);
-  $('sb').checked = Boolean(state?.sb);
-  $('sb-studio').checked = Boolean(state?.sb);
-  $('sparkle').value = String(state?.sparkle ?? 0);
+  $('psd').addEventListener('change', (e) => api('device/state', { seg: [{ psd: e.target.checked }] }));
+  $('nl').addEventListener('change', (e) => api('device/state', { nl: { on: e.target.checked } }));
+
+  bindDeviceSlider('sx', (v) => String(v), (v) => api('device/state', { seg: [{ sx: v }] }), seg.sx);
+  bindDeviceSlider('ix', (v) => String(v), (v) => api('device/state', { seg: [{ ix: v }] }), seg.ix);
+
+  $('fx-search').addEventListener('input', (e) => { fxQuery = e.target.value.toLowerCase(); renderEffects(); });
+  bindSeg('fx-filter', (v) => { fxFilter = v; renderEffects(); });
+
+  renderEffects(seg.fx);
 }
 
-/** Slider that writes straight to the device, throttled to avoid flooding it. */
-function bindDeviceSlider(id, format, send, seg, initial) {
+function renderEffects(activeId) {
+  const grid = $('effects');
+  const list = allEffects.filter((e) =>
+    (fxFilter === 'all' || (fxFilter === 'sound') === Boolean(e.sound)) &&
+    (!fxQuery || e.label.toLowerCase().includes(fxQuery)));
+
+  if (!list.length) {
+    const p = document.createElement('p');
+    p.className = 'empty';
+    p.textContent = 'No effects match that.';
+    grid.replaceChildren(p);
+    return;
+  }
+
+  grid.replaceChildren(...list.map((e) => {
+    const el = card({
+      cls: 'compact',
+      name: e.label,
+      onClick: async () => {
+        for (const c of grid.children) c.classList.toggle('is-active', c === el);
+        markActive(null);      // the server stops our stream; reflect it now
+        await api('device/state', { seg: [{ fx: e.id }] });
+      },
+    });
+    el.dataset.fx = e.id;
+    if (activeId === e.id) el.classList.add('is-active');
+    if (e.sound) {
+      // Information, not decoration - these do nothing in a silent room.
+      const i = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      i.setAttribute('class', 'sound');
+      i.setAttribute('viewBox', '0 0 24 24');
+      i.setAttribute('fill', 'none');
+      i.setAttribute('stroke', 'currentColor');
+      i.setAttribute('stroke-width', '2.5');
+      i.setAttribute('stroke-linecap', 'round');
+      i.setAttribute('role', 'img');
+      i.innerHTML = '<title>Sound-reactive</title><path d="M3 12h3l3-7 3 14 3-10 3 5h3"/>';
+      el.appendChild(i);
+    }
+    return el;
+  }));
+}
+
+/** Device sliders are throttled harder: it's an ESP32 on 2.4GHz. */
+function bindDeviceSlider(id, format, send, initial) {
   const el = $(id);
   const out = $(`${id}-out`);
   if (initial != null) el.value = String(initial);
   out.textContent = format(Number(el.value));
-
-  let pending = null, timer = null;
+  const push = debounce((v) => send(v), 120);
   el.addEventListener('input', () => {
     const v = Number(el.value);
     out.textContent = format(v);
-    pending = v;
-    // The cube is an ESP32 on 2.4GHz; a POST per input event would swamp it.
-    if (timer) return;
-    timer = setTimeout(() => {
-      timer = null;
-      if (pending != null) { send(pending); pending = null; }
-    }, 120);
+    push(v);
   });
 }
 
-/* ── status polling ───────────────────────────────────────── */
+$('warp').addEventListener('click', async () => {
+  const b = $('warp');
+  b.disabled = true;
+  try {
+    await api('warp', {});
+    markActive(null);   // the server released the stream so warp is visible
+  } finally {
+    setTimeout(() => { b.disabled = false; }, 15000);
+  }
+});
+
+/* ── status ───────────────────────────────────────────────── */
+const draw = [];
+
+function drawSparkline() {
+  const cv = $('sparkline');
+  const ctx = cv.getContext('2d');
+  const w = cv.width, h = cv.height;
+  ctx.clearRect(0, 0, w, h);
+  if (draw.length < 2) return;
+  const lo = Math.min(...draw), hi = Math.max(...draw);
+  const span = Math.max(12, hi - lo);      // a flat line should look flat, not noisy
+  ctx.beginPath();
+  draw.forEach((v, i) => {
+    const x = (i / (draw.length - 1)) * (w - 2) + 1;
+    const y = h - 2 - ((v - lo) / span) * (h - 4);
+    i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+  });
+  ctx.strokeStyle = '#7C5CFC';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
 function setTally(state, text) {
   $('tally').dataset.state = state;
   $('tally-text').textContent = text;
 }
 
+function setOffline(off, detail) {
+  if (off === !deviceOnline) return;
+  deviceOnline = !off;
+  $('offline').hidden = !off;
+  document.querySelector('.modifiers').classList.toggle('is-disabled', off);
+  if (detail) $('offline-detail').textContent = detail;
+}
+
 async function poll() {
   try {
     const s = await api('status');
-    if (!s.online) {
-      setTally('offline', 'cube unreachable');
-    } else if (s.renderer.running) {
+    setOffline(!s.online,
+      `Check it's powered on and on the same network as this computer (${s.config.host}).`);
+
+    if (!s.online) { setTally('offline', 'cube unreachable'); return; }
+
+    if (s.renderer.running) {
       setTally('streaming', `streaming · ${s.renderer.animation}`);
       if (s.renderer.animation !== current) {
-        if (s.renderer.animParams) schemas[s.renderer.animation].values = s.renderer.animParams;
+        if (s.renderer.animParams && schemas[s.renderer.animation]) {
+          schemas[s.renderer.animation].values = s.renderer.animParams;
+        }
         markActive(s.renderer.animation);
         buildInspector(s.renderer.animation);
       }
     } else {
-      setTally('onboard', 'onboard · not streaming');
+      setTally('onboard', 'the cube’s own effect');
       if (current !== null) markActive(null);
     }
 
-    // Seed the slider from the cube's own brightness rather than a hardcoded
-    // default, so the app opens at the level the user already chose. Once they
-    // move it, their choice wins and we stop syncing.
-    if (!brightnessSynced && !s.renderer.brightnessTouched && s.renderer.deviceBrightness != null) {
-      const v = Math.round(s.renderer.params.brightness * 255);
-      $('brightness').value = String(v);
+    // Seed brightness from wherever it currently lives, until the user takes over.
+    if (!brightnessSynced) {
+      const v = s.renderer.running
+        ? Math.round(s.renderer.params.brightness * 255)
+        : (s.renderer.deviceBrightness ?? 150);
+      brightness.value = String(v);
       $('brightness-out').textContent = String(v);
-      brightnessSynced = true;
     }
-
-    fillSymmetry(s.config.symmetries ?? ['none']);
 
     if (s.device) {
       $('device-name').textContent = s.device.name ?? s.device.product ?? '—';
-      $('device-pixels').textContent = `${s.config.working} px · ${s.config.perEdge}/edge`;
-      $('device-power').textContent = s.device.power != null ? `${s.device.power} mA` : '—';
+      $('power').checked = Boolean(s.device.on ?? true);
+      $('sb').checked = Boolean(s.device.sb);
+      if (s.device.sym != null) $('symmetry').value = String(s.device.sym);
+      if (s.device.sparkle != null) {
+        for (const b of $('sparkle').children) {
+          b.classList.toggle('is-on', b.dataset.v === String(s.device.sparkle));
+        }
+      }
+      if (s.device.power != null) {
+        $('device-power').textContent = `${s.device.power} mA`;
+        draw.push(s.device.power);
+        if (draw.length > 40) draw.shift();
+        drawSparkline();
+      }
     }
   } catch {
     setTally('offline', 'server unreachable');
+    setOffline(true, 'The Drostex server stopped responding. Is it still running?');
   }
 }
+
+$('retry').addEventListener('click', poll);
 
 await loadAnimations();
 await renderPresets(await api('presets'));

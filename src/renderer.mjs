@@ -34,7 +34,16 @@ export class Renderer {
     // firmware applies both to streamed pixels, and its symmetry modes know the
     // cube's real geometry - Cubic, Helical, Trigonal - which we never mapped.
     // Reimplementing them locally would be strictly worse, and duplicated.
-    this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2, audioReact: 0 };
+    this.params = {
+      brightness: 0.85, speed: 1, fps: 40, gamma: 2.2,
+      // Sound routing. The cube's own "pulse to music" only drives the
+      // firmware's effects, so audio-reactive streamed animations need their
+      // own path - and rather than hard-wiring it to brightness, it modulates
+      // whichever parameter you point it at.
+      audioTarget: 'none',   // 'none' | 'brightness' | a numeric param name
+      audioBand: 'level',    // level | bass | mid | treble
+      audioAmount: 0.6,
+    };
     // Latest audio features from the browser, with the time they arrived so a
     // closed tab decays to silence instead of freezing at its last value.
     this.audio = { level: 0, bass: 0, mid: 0, treble: 0, at: 0 };
@@ -189,7 +198,9 @@ export class Renderer {
   }
 
   setParams(p) {
-    for (const k of ['audioReact']) {
+    if (typeof p.audioTarget === 'string') this.params.audioTarget = p.audioTarget;
+    if (['level', 'bass', 'mid', 'treble'].includes(p.audioBand)) this.params.audioBand = p.audioBand;
+    for (const k of ['audioAmount']) {
       const v = Number(p[k]);
       if (Number.isFinite(v)) this.params[k] = clamp01(v);
     }
@@ -244,14 +255,25 @@ export class Renderer {
       if (!anim) break;
 
       const t = (Date.now() - this.startedAt) / 1000;
-      const { brightness, speed, gamma, audioReact } = this.params;
-      const params = this.animParams[name];
+      const { brightness, speed, gamma, audioTarget, audioBand, audioAmount } = this.params;
+      let params = this.animParams[name];
       const audio = this.currentAudio();
+      const band = clamp01(audio[audioBand] ?? 0);
 
-      // Overall level lifts or ducks the whole frame. Kept as a multiplier so
-      // it composes with whatever per-parameter audio routing the animation
-      // does itself.
-      const gain = 1 - audioReact + audioReact * clamp01(audio.level);
+      // Routed to brightness, sound gates the whole frame. Routed to a named
+      // parameter, it pushes that parameter from its current value toward the
+      // top of its declared range - so the same control drives tail length,
+      // glow, speed or hue depending on where you point it.
+      let gain = 1;
+      if (audioTarget === 'brightness') {
+        gain = 1 - audioAmount + audioAmount * band;
+      } else if (audioTarget && audioTarget !== 'none') {
+        const def = anim.params?.[audioTarget];
+        if (def?.type === 'number') {
+          const base = params[audioTarget];
+          params = { ...params, [audioTarget]: base + (def.max - base) * band * audioAmount };
+        }
+      }
 
       for (let i = 0; i < n; i++) {
         const rgb = anim.fn(makeContext(i, n, perEdge, t, speed, params, audio));

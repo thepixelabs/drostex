@@ -53,11 +53,6 @@
     <select id="symmetry"></select>
   </div>
 
-  <label class="switch">
-    <input type="checkbox" id="sb">
-    <span>Pulse to music</span>
-  </label>
-
   <p class="mod-note" id="mod-note" hidden>
     These apply to everything &mdash; your looks and the built-in effects alike.
     <button class="link" id="mod-note-x">Got it</button>
@@ -110,6 +105,31 @@
         <p class="save-status" id="save-status" hidden></p>
         <div id="params"></div>
 
+        <p class="param-group">Sound</p>
+        <div class="param">
+          <label for="audio-target">Sound drives</label>
+          <select id="audio-target"></select>
+          <p class="hint" id="audio-hint">Uses this computer&rsquo;s microphone. The cube&rsquo;s own
+            mic only drives its built-in effects.</p>
+        </div>
+        <div class="param" id="audio-extra" hidden>
+          <label for="audio-band">Frequency <output id="audio-band-out"></output></label>
+          <select id="audio-band">
+            <option value="level">Everything</option>
+            <option value="bass">Bass</option>
+            <option value="mid">Mids</option>
+            <option value="treble">Treble</option>
+          </select>
+        </div>
+        <div class="param" id="audio-amount-wrap" hidden>
+          <label for="audio-amount">Amount <output id="audio-amount-out">60</output></label>
+          <input type="range" id="audio-amount" min="0" max="100" value="60">
+          <div class="mic-row">
+            <button class="btn" id="mic">Turn on microphone</button>
+            <span class="meter" id="meter"><i></i></span>
+          </div>
+        </div>
+
         <div class="save-row">
           <input type="text" id="preset-name" placeholder="Name this look" maxlength="60">
           <button class="btn" id="save-preset">Save</button>
@@ -142,6 +162,7 @@
         <label for="ix">Intensity <output id="ix-out">&mdash;</output></label>
         <input type="range" id="ix" min="0" max="255" value="128">
       </div>
+      <label class="switch"><input type="checkbox" id="sb"><span>Pulse to music</span></label>
       <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>
       <label class="switch"><input type="checkbox" id="nl"><span>Nightlight</span></label>
       <button class="btn btn-warp" id="warp" title="A one-shot animation built into the cube">Warp drive</button>

@@ -107,10 +107,13 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (p === '/api/status') {
-      let dev = null, dstate = null;
-      try {
-        [dev, dstate] = await Promise.all([device('/json/info'), device('/json/state')]);
-      } catch { /* cube offline */ }
+      // allSettled, not all: these are two separate requests to an ESP32 that
+      // is also receiving 40 UDP packets a second, and it drops one now and
+      // then. With Promise.all a single dropped /json/state marked the whole
+      // cube unreachable while every control still worked.
+      const [i, st] = await Promise.allSettled([device('/json/info'), device('/json/state')]);
+      const dev = i.status === 'fulfilled' ? i.value : null;
+      const dstate = st.status === 'fulfilled' ? st.value : null;
       return json(res, 200, {
         renderer: renderer.status(),
         device: dev && {
@@ -303,7 +306,11 @@ server.on('error', (e) => {
   process.exit(1);
 });
 
-await renderer.captureFromDevice();
+// Deliberately NOT awaited before listen(): this is a request to a cube that
+// may be slow or absent, and blocking the port on it means the UI is
+// unreachable until the network answers. The value is only needed on the first
+// play, which cannot happen before the server is up anyway.
+renderer.captureFromDevice();
 
 server.listen(PORT, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${PORT}`;

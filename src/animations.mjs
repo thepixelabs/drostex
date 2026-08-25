@@ -133,7 +133,7 @@ export const ANIMATIONS = {
     label: 'Comet',
     desc: 'a bright head with an exponential tail, orbiting the cube',
     params: {
-      tail: num('Tail length', 22, 4, 60, 1, 'lower is longer'),
+      tail: num('Tail length', 0.55, 0, 1, 0.01),
       glow: num('Glow', 0.6, 0, 1, 0.01, 'soft halo around the head'),
       hue: num('Hue', 0.55, 0, 1),
       hueShift: num('Hue shift', 0.4, 0, 1, 0.01, 'colour change as it orbits'),
@@ -144,7 +144,10 @@ export const ANIMATIONS = {
       for (let k = 0; k < p.count; k++) {
         const head = fract(t * 0.25 * speed + k / p.count);
         const d = ringDist(uw, head);
-        const v = Math.exp(-d * p.tail) + p.glow * Math.exp(-d * p.tail * 0.27);
+        // Higher `tail` must mean a LONGER tail, so it maps to a gentler
+        // exponential falloff, not a larger coefficient.
+        const falloff = 60 - p.tail * 56;
+        const v = Math.exp(-d * falloff) + p.glow * Math.exp(-d * falloff * 0.27);
         const c = hsv(p.hue + head * p.hueShift, 0.7, 1);
         out = out.map((x, j) => Math.max(x, c[j] * clamp01(v)));
       }
@@ -175,7 +178,7 @@ export const ANIMATIONS = {
     desc: 'rings running outward along every edge together',
     params: {
       paletteName: pal('Palette'),
-      width: num('Falloff', 3, 1, 8, 0.1),
+      width: num('Sharpness', 3, 1, 8, 0.1),
       rate: num('Rate', 0.4, -2, 2),
       spread: num('Colour spread', 0.3, 0, 2),
     },
@@ -196,7 +199,7 @@ export const ANIMATIONS = {
       scale: num('Scale', 4, 1, 12, 0.1, 'higher is more detail'),
       rate: num('Flicker rate', 1.6, 0.1, 5),
       heat: num('Heat', 1.6, 0.5, 3),
-      cool: num('Blue tip', 6, 2, 12, 0.1, 'higher is less blue at the peaks'),
+      blue: num('Blue tips', 0.55, 0, 1, 0.01, 'cool colour at the hottest points'),
     },
     fn: ({ u, t, speed, p }) => {
       const n = fbm(u * p.scale + t * p.rate * speed, 3);
@@ -204,7 +207,7 @@ export const ANIMATIONS = {
       return [
         clamp01(heat * 1.6),
         clamp01(Math.pow(heat, 2.2) * 1.1),
-        clamp01(Math.pow(heat, p.cool) * 0.7),
+        clamp01(Math.pow(heat, 12 - p.blue * 10) * 0.7),
       ];
     },
   },
@@ -234,13 +237,14 @@ export const ANIMATIONS = {
     params: {
       base: col('Base', '#0a1030'),
       spark: col('Spark', '#ffffff'),
-      density: num('Density', 24, 4, 60, 1, 'higher is rarer'),
+      density: num('Density', 0.45, 0, 1, 0.01, 'how many twinkle at once'),
       rate: num('Rate', 0.9, 0.1, 4),
     },
     fn: ({ i, t, speed, p }) => {
       const base = hexRGB(p.base), spark = hexRGB(p.spark);
       const ph = hash(i * 7.3);
-      const s = Math.pow(clamp01(Math.sin((t * p.rate * speed + ph * 10) % 6.283)), p.density);
+      // Higher density must mean MORE sparkles, so it lowers the exponent.
+      const s = Math.pow(clamp01(Math.sin((t * p.rate * speed + ph * 10) % 6.283)), 60 - p.density * 56);
       return base.map((x, k) => clamp01(x + s * spark[k]));
     },
   },
@@ -279,6 +283,57 @@ export const ANIMATIONS = {
       const gb = Math.pow(clamp01(b * 1.4), p.contrast + 1);
       const A = hexRGB(p.colorA), B = hexRGB(p.colorB);
       return [0, 1, 2].map((k) => clamp01(A[k] * ga + B[k] * gb));
+    },
+  },
+
+  snake: {
+    label: 'Snake',
+    desc: 'one lit segment travelling the strip, endlessly',
+    // The strip is a closed loop, so a segment driven by `uw` genuinely runs
+    // round and round with no start or end - which is the whole point.
+    //
+    // Whether it reads as ONE line depends on the cube's wiring, not on this
+    // code. Each address drives more than one physical LED, and where the data
+    // line branches the same segment shows on several edges at once. `path:
+    // edge` leans into that instead of fighting it.
+    params: {
+      length: num('Length', 6, 1, 22, 1, 'how many LEDs long'),
+      path: pick('Path', 'loop', ['loop', 'edge'],
+        'loop = one segment around the whole strip · edge = one on every edge'),
+      rate: num('Speed', 0.2, -2, 2),
+      count: num('Snakes', 1, 1, 4, 1),
+      colorMode: pick('Colour', 'solid', ['solid', 'palette', 'rainbow']),
+      color: col('Colour', '#00E5A0'),
+      paletteName: pal('Palette'),
+      tail: num('Tail fade', 0.75, 0, 1, 0.01, 'how much the body dims behind the head'),
+      glow: num('Glow', 0.25, 0, 1, 0.01, 'faint trail beyond the body'),
+    },
+    fn: ({ uw, e, n, perEdge, t, speed, p }) => {
+      const onEdge = p.path === 'edge';
+      const x = onEdge ? e : uw;
+      const total = onEdge ? perEdge : n;
+      const len = Math.max(1, p.length) / total;   // body length as a fraction
+
+      let best = 0, bestPos = 0;
+      for (let k = 0; k < p.count; k++) {
+        const head = fract(t * p.rate * speed + k / p.count);
+        // Distance BEHIND the head, so the segment trails rather than centres.
+        const b = fract(head - x);
+        let v = 0;
+        if (b < len) {
+          v = 1 - (b / len) * p.tail;
+        } else if (p.glow > 0) {
+          v = p.glow * Math.exp(-(b - len) * 14);
+        }
+        if (v > best) { best = v; bestPos = b / len; }
+      }
+      if (best <= 0) return [0, 0, 0];
+
+      let c;
+      if (p.colorMode === 'palette') c = palette(p.paletteName, clamp01(bestPos));
+      else if (p.colorMode === 'rainbow') c = hsv(x + t * 0.1 * speed, 0.95, 1);
+      else c = hexRGB(p.color);
+      return c.map((v) => v * best);
     },
   },
 
@@ -375,7 +430,7 @@ export const SYMMETRY_NAMES = Object.keys(SYMMETRIES);
 /** Per-address context. `perEdge` makes `e` wrap at every corner. */
 export function makeContext(i, n, perEdge, t, speed, p, audio) {
   return {
-    i, n, t, speed, p,
+    i, n, perEdge, t, speed, p,
     u: n > 1 ? i / (n - 1) : 0,
     uw: i / n,
     e: (i % perEdge) / perEdge,

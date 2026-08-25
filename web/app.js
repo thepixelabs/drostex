@@ -37,6 +37,8 @@ let palettes = {};         // name -> [[r,g,b] x7]
 let effectsLoaded = false;
 let brightnessSynced = false;
 let deviceOnline = true;
+// One missed poll is normal for a busy ESP32; only a run of them means trouble.
+let offlineStrikes = 0;
 
 /* ── tabs ─────────────────────────────────────────────────── */
 for (const tab of document.querySelectorAll('.tab')) {
@@ -131,6 +133,7 @@ function markActive(name) {
   if (!name) { insp.hidden = true; return; }
   insp.hidden = false;
   $('inspector-title').textContent = schemas[name]?.label ?? name;
+  buildAudioRouting(name);
 }
 
 /* ── parameter inspector ──────────────────────────────────── */
@@ -144,6 +147,11 @@ const GROUPS = {
     Colour: ['colorMode', 'paletteName', 'colorA', 'colorB', 'hue'],
     Range: ['contrast', 'floor'],
     Sound: ['audioBand', 'audioAmount'],
+  },
+  snake: {
+    Shape: ['path', 'length', 'count'],
+    Motion: ['rate', 'tail', 'glow'],
+    Colour: ['colorMode', 'color', 'paletteName'],
   },
   aurora: { Colour: ['colorA', 'colorB'], Motion: ['scale', 'rate', 'contrast'] },
   breathe: { Colour: ['colorA', 'colorB', 'blend'], Motion: ['floor', 'shape'] },
@@ -301,6 +309,107 @@ function paramControl(key, def, values, push) {
   return wrap;
 }
 
+/* ── sound routing ────────────────────────────────────────
+ *
+ * The cube's own "pulse to music" only reaches the firmware's effects, so
+ * streamed animations need audio from here. Rather than hard-wiring it to
+ * brightness, it modulates whichever parameter you point it at - so the same
+ * control drives tail length, glow, speed or hue depending on the target.
+ */
+function buildAudioRouting(name) {
+  const spec = schemas[name];
+  const sel = $('audio-target');
+  if (!spec) return;
+
+  const numeric = Object.entries(spec.params)
+    .filter(([, d]) => d.type === 'number')
+    .map(([k, d]) => [k, d.label ?? k]);
+
+  const prev = sel.value;
+  sel.replaceChildren(
+    ...[['none', 'Nothing'], ['brightness', 'Brightness']].concat(numeric).map(([v, label]) => {
+      const o = document.createElement('option');
+      o.value = v; o.textContent = label;
+      return o;
+    }),
+  );
+  sel.value = [...sel.options].some((o) => o.value === prev) ? prev : 'none';
+  toggleAudioExtras();
+}
+
+function toggleAudioExtras() {
+  const on = $('audio-target').value !== 'none';
+  $('audio-extra').hidden = !on;
+  $('audio-amount-wrap').hidden = !on;
+}
+
+$('audio-target').addEventListener('change', () => {
+  toggleAudioExtras();
+  api('params', { audioTarget: $('audio-target').value }).catch(() => {});
+});
+$('audio-band').addEventListener('change', () =>
+  api('params', { audioBand: $('audio-band').value }).catch(() => {}));
+$('audio-amount').addEventListener('input', () => {
+  $('audio-amount-out').textContent = $('audio-amount').value;
+  api('params', { audioAmount: Number($('audio-amount').value) / 100 }).catch(() => {});
+});
+
+let micStream = null, micTimer = null;
+async function toggleMic() {
+  const btn = $('mic');
+  if (micStream) {
+    clearInterval(micTimer);
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    btn.textContent = 'Turn on microphone';
+    btn.classList.remove('is-on');
+    $('meter').firstElementChild.style.width = '0%';
+    api('audio', { level: 0, bass: 0, mid: 0, treble: 0 }).catch(() => {});
+    return;
+  }
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      // All three are tuned for speech and would duck the music we want to follow.
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+  } catch {
+    btn.textContent = 'Microphone blocked';
+    return;
+  }
+
+  const ctx = new AudioContext();
+  const an = ctx.createAnalyser();
+  an.fftSize = 1024;
+  an.smoothingTimeConstant = 0.6;
+  ctx.createMediaStreamSource(micStream).connect(an);
+
+  const bins = new Uint8Array(an.frequencyBinCount);
+  const hz = ctx.sampleRate / an.fftSize;
+  const band = (lo, hi) => {
+    const a = Math.max(1, Math.floor(lo / hz));
+    const b = Math.min(bins.length - 1, Math.ceil(hi / hz));
+    let sum = 0;
+    for (let i = a; i <= b; i++) sum += bins[i];
+    return sum / ((b - a + 1) * 255);
+  };
+
+  // Decaying peak, so a quiet room and a loud one both use the full range.
+  let peak = 0.15;
+  btn.textContent = 'Microphone on';
+  btn.classList.add('is-on');
+  micTimer = setInterval(() => {
+    an.getByteFrequencyData(bins);
+    const raw = { bass: band(20, 250), mid: band(250, 2000), treble: band(2000, 8000) };
+    const level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
+    peak = Math.max(level, peak * 0.995, 0.05);
+    const n = (x) => Math.min(1, x / peak);
+    const payload = { level: n(level), bass: n(raw.bass), mid: n(raw.mid), treble: n(raw.treble) };
+    $('meter').firstElementChild.style.width = `${Math.round(payload.level * 100)}%`;
+    api('audio', payload).catch(() => {});
+  }, 40);
+}
+$('mic').addEventListener('click', toggleMic);
+
 $('reset-params').addEventListener('click', async () => {
   if (!current) return;
   const { values } = await api('anim-params', { name: current, reset: true });
@@ -407,7 +516,6 @@ const pushBrightness = debounce(() => {
 }, 90);
 
 $('power').addEventListener('change', (e) => api('device/state', { on: e.target.checked }));
-$('sb').addEventListener('change', (e) => api('device/state', { sb: e.target.checked }));
 
 function bindSeg(id, onPick) {
   const host = $(id);
@@ -482,6 +590,7 @@ async function loadEffects() {
   if (seg.pal != null) sel.value = String(seg.pal);
   sel.addEventListener('change', () => api('device/state', { seg: [{ pal: Number(sel.value) }] }));
 
+  $('sb').addEventListener('change', (e) => api('device/state', { sb: e.target.checked }));
   $('psd').addEventListener('change', (e) => api('device/state', { seg: [{ psd: e.target.checked }] }));
   $('nl').addEventListener('change', (e) => api('device/state', { nl: { on: e.target.checked } }));
 
@@ -600,10 +709,20 @@ function setOffline(off, detail) {
 async function poll() {
   try {
     const s = await api('status');
-    setOffline(!s.online,
-      `Check it's powered on and on the same network as this computer (${s.config.host}).`);
 
-    if (!s.online) { setTally('offline', 'cube unreachable'); return; }
+    if (s.online) {
+      offlineStrikes = 0;
+      setOffline(false);
+    } else if (++offlineStrikes >= 3) {
+      setOffline(true,
+        `Check it's powered on and on the same network as this computer (${s.config.host}).`);
+    }
+
+    if (!s.online) {
+      setTally(offlineStrikes >= 3 ? 'offline' : 'idle',
+               offlineStrikes >= 3 ? 'cube unreachable' : 'reconnecting…');
+      return;
+    }
 
     if (s.renderer.running) {
       setTally('streaming', `streaming · ${s.renderer.animation}`);
@@ -631,7 +750,6 @@ async function poll() {
     if (s.device) {
       $('device-name').textContent = s.device.name ?? s.device.product ?? '—';
       $('power').checked = Boolean(s.device.on ?? true);
-      $('sb').checked = Boolean(s.device.sb);
       if (s.device.sym != null) $('symmetry').value = String(s.device.sym);
       if (s.device.sparkle != null) {
         for (const b of $('sparkle').children) {
@@ -646,12 +764,16 @@ async function poll() {
       }
     }
   } catch {
-    setTally('offline', 'server unreachable');
-    setOffline(true, 'The Drostex server stopped responding. Is it still running?');
+    if (++offlineStrikes >= 3) {
+      setTally('offline', 'server unreachable');
+      setOffline(true, 'The Drostex server stopped responding. Is it still running?');
+    } else {
+      setTally('idle', 'reconnecting…');
+    }
   }
 }
 
-$('retry').addEventListener('click', poll);
+$('retry').addEventListener('click', () => { offlineStrikes = 0; poll(); });
 
 await loadAnimations();
 await renderPresets(await api('presets'));

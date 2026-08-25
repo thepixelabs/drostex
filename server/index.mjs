@@ -22,7 +22,7 @@ import { dirname } from 'node:path';
 import { exec } from 'node:child_process';
 import { loadConfig } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
-import { ANIMATIONS } from '../src/animations.mjs';
+import { ANIMATIONS, SYMMETRY_NAMES } from '../src/animations.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -105,7 +105,10 @@ const server = http.createServer(async (req, res) => {
           name: dev.name, product: dev.product, brand: dev.brand,
           live: dev.live, count: dev.leds?.count, power: dev.leds?.pwr,
         },
-        config: { host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge },
+        config: {
+          host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge,
+          symmetries: SYMMETRY_NAMES,
+        },
         online: Boolean(dev),
       });
     }
@@ -116,6 +119,19 @@ const server = http.createServer(async (req, res) => {
         params: a.params ?? {},
         values: renderer.animParams[id],
       })));
+    }
+
+    if (p === '/api/audio' && req.method === 'POST') {
+      // Audio arrives from the browser tab, ~25/sec. Loopback, ~60 bytes each.
+      renderer.setAudio(await readBody(req));
+      res.writeHead(204); return res.end();
+    }
+
+    if (p === '/api/pixels') {
+      // The last frame actually sent. With no 3D preview and no reliable map
+      // from address to physical edge, this is the only honest visual feedback
+      // available: it shows what we computed, not where it landed.
+      return json(res, 200, { pixels: renderer.pixels(), running: renderer.running });
     }
 
     if (p === '/api/anim-params' && req.method === 'POST') {

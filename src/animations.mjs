@@ -302,8 +302,10 @@ export const ANIMATIONS = {
       hue: num('Hue', 0.6, 0, 1),
       contrast: num('Contrast', 1, 0.2, 4, 0.05),
       floor: num('Floor', 0, 0, 1, 0.01, 'lifts the dark end so nothing goes fully black'),
+      audioBand: pick('Audio drives', 'none', ['none', 'level', 'bass', 'mid', 'treble']),
+      audioAmount: num('Audio depth', 0.7, 0, 1, 0.01, 'how much the sound moves it'),
     },
-    fn: ({ uw, e, i, n, t, speed, p }) => {
+    fn: ({ uw, e, i, n, t, speed, p, audio }) => {
       const x = p.space === 'edge' ? e : p.space === 'index' ? hash(i * 3.7) : uw;
       const phase = fract(x * p.cycles + t * p.rate * speed);
 
@@ -317,6 +319,10 @@ export const ANIMATIONS = {
         default: w = 0.5 + 0.5 * Math.sin(phase * 6.28318);
       }
       w = clamp01(Math.pow(clamp01(w), p.contrast));
+      if (p.audioBand !== 'none') {
+        const a = clamp01(audio[p.audioBand] ?? 0);
+        w *= 1 - p.audioAmount + p.audioAmount * a;
+      }
       w = p.floor + (1 - p.floor) * w;
 
       if (p.colorMode === 'two-tone') {
@@ -337,12 +343,43 @@ export function defaultParams(name) {
   return Object.fromEntries(Object.entries(schema).map(([k, v]) => [k, v.default]));
 }
 
+/**
+ * Index-space symmetry.
+ *
+ * The firmware has its own symmetry modes, but they operate on its effect
+ * renderer and do not visibly reach streamed pixels. These are ours, applied to
+ * the sampling index before the animation is evaluated.
+ *
+ * Every mode is expressible without knowing where any LED physically sits,
+ * which matters because that mapping resisted measurement. They work in strip
+ * space and edge space, which is all we reliably know.
+ */
+export const SYMMETRIES = {
+  none: (i) => i,
+  reverse: (i, n) => n - 1 - i,
+  // Fold the loop in half: the second half mirrors the first.
+  mirror: (i, n) => (i < n / 2 ? i : n - 1 - i),
+  // Repeat the first half / quarter around the loop.
+  cyclic2: (i, n) => i % Math.max(1, Math.round(n / 2)),
+  cyclic4: (i, n) => i % Math.max(1, Math.round(n / 4)),
+  // Mirror within every edge run, so all edges read symmetrically.
+  edgeMirror: (i, n, perEdge) => {
+    const base = i - (i % perEdge);
+    const pos = i % perEdge;
+    const half = Math.floor(perEdge / 2);
+    return base + (pos <= half ? pos : perEdge - 1 - pos);
+  },
+};
+export const SYMMETRY_NAMES = Object.keys(SYMMETRIES);
+
 /** Per-address context. `perEdge` makes `e` wrap at every corner. */
-export function makeContext(i, n, perEdge, t, speed, p) {
+export function makeContext(i, n, perEdge, t, speed, p, audio) {
   return {
     i, n, t, speed, p,
     u: n > 1 ? i / (n - 1) : 0,
     uw: i / n,
     e: (i % perEdge) / perEdge,
+    // Zeroed when no audio is arriving, so animations can read it freely.
+    audio: audio ?? { level: 0, bass: 0, mid: 0, treble: 0 },
   };
 }

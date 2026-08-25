@@ -45,10 +45,32 @@
             <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
             <input type="range" id="fps" min="10" max="60" value="40">
           </div>
+          <hr class="rule">
+
+          <div class="row-wrap">
+            <span class="field">
+              <label for="symmetry-studio">Symmetry</label>
+              <select id="symmetry-studio"></select>
+            </span>
+            <span class="field" style="flex:1;min-width:150px">
+              <label for="sparkle-studio">Sparkle <output id="sparkle-studio-out">0</output></label>
+              <input type="range" id="sparkle-studio" min="0" max="100" value="0">
+            </span>
+          </div>
+
+          <div class="row-wrap">
+            <button class="btn" id="mic">Enable microphone</button>
+            <span class="field" style="flex:1;min-width:150px">
+              <label for="audio-react">Sound reactivity <output id="audio-react-out">0</output></label>
+              <input type="range" id="audio-react" min="0" max="100" value="0">
+            </span>
+            <span class="meter" id="meter" title="input level"><i></i></span>
+          </div>
+
           <div class="toggles">
             <label class="switch">
               <input type="checkbox" id="sb-studio">
-              <span>Pulse brightness to music</span>
+              <span>Cube&rsquo;s own mic pulse</span>
             </label>
             <button class="btn btn-stop" id="stop">Stop &amp; release</button>
           </div>

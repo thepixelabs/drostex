@@ -7,7 +7,8 @@
  */
 
 import dgram from 'node:dgram';
-import { ANIMATIONS, makeContext, clamp01, defaultParams } from './animations.mjs';
+import { ANIMATIONS, makeContext, clamp01, defaultParams,
+         SYMMETRIES, hash } from './animations.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -26,7 +27,19 @@ export class Renderer {
     this.sock = null;
     this.running = false;
     this.animation = null;
-    this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2 };
+    // Global playback settings. sparkle, symmetry and audio reactivity live
+    // here rather than per-animation: they are modifiers over whatever is
+    // playing, exactly like the firmware's own versions - except these actually
+    // reach the 44 addresses that have physical LEDs behind them.
+    this.params = {
+      brightness: 0.85, speed: 1, fps: 40, gamma: 2.2,
+      sparkle: 0,          // 0..1 twinkle density
+      symmetry: 'none',    // index-space fold, see SYMMETRIES
+      audioReact: 0,       // 0..1 how much overall level drives brightness
+    };
+    // Latest audio features from the browser, with the time they arrived so a
+    // closed tab decays to silence instead of freezing at its last value.
+    this.audio = { level: 0, bass: 0, mid: 0, treble: 0, at: 0 };
     // The device's own brightness before we touched it. Streaming needs the
     // device at 255 (realtime pixels are scaled by it), but that is OUR
     // requirement, not a change the user asked for - so it gets put back.
@@ -153,7 +166,32 @@ export class Renderer {
     }
   }
 
+  setAudio(a) {
+    for (const k of ['level', 'bass', 'mid', 'treble']) {
+      const v = Number(a?.[k]);
+      if (Number.isFinite(v)) this.audio[k] = clamp01(v);
+    }
+    this.audio.at = Date.now();
+  }
+
+  /** Audio, faded out if the source has gone quiet or gone away. */
+  currentAudio() {
+    const age = Date.now() - this.audio.at;
+    if (age > 1500) return { level: 0, bass: 0, mid: 0, treble: 0 };
+    // Ramp down over the last half second rather than cutting to black.
+    const k = age > 1000 ? 1 - (age - 1000) / 500 : 1;
+    return {
+      level: this.audio.level * k, bass: this.audio.bass * k,
+      mid: this.audio.mid * k, treble: this.audio.treble * k,
+    };
+  }
+
   setParams(p) {
+    if (typeof p.symmetry === 'string' && SYMMETRIES[p.symmetry]) this.params.symmetry = p.symmetry;
+    for (const k of ['sparkle', 'audioReact']) {
+      const v = Number(p[k]);
+      if (Number.isFinite(v)) this.params[k] = clamp01(v);
+    }
     if (typeof p.brightness === 'number' && Number.isFinite(p.brightness)) {
       // An explicit choice stops us re-seeding from the device on the next play.
       this.brightnessTouched = true;
@@ -201,14 +239,36 @@ export class Renderer {
       if (!anim) break;
 
       const t = (Date.now() - this.startedAt) / 1000;
-      const { brightness, speed, gamma } = this.params;
+      const { brightness, speed, gamma, sparkle, symmetry, audioReact } = this.params;
       const params = this.animParams[name];
+      const audio = this.currentAudio();
+      const fold = SYMMETRIES[symmetry] ?? SYMMETRIES.none;
+
+      // Overall level lifts or ducks the whole frame. Kept as a multiplier so
+      // it composes with whatever per-parameter audio routing the animation
+      // does itself.
+      const gain = 1 - audioReact + audioReact * clamp01(audio.level);
 
       for (let i = 0; i < n; i++) {
-        const rgb = anim.fn(makeContext(i, n, perEdge, t, speed, params));
+        // Symmetry is applied to the SAMPLING index, so the animation is
+        // evaluated as though the strip were folded. It needs no knowledge of
+        // where any LED physically sits - which is just as well, since that
+        // mapping resisted every attempt to measure it.
+        const src = fold(i, n, perEdge);
+        const rgb = anim.fn(makeContext(src, n, perEdge, t, speed, params, audio));
+
+        let spark = 0;
+        if (sparkle > 0) {
+          // Each address twinkles on its own phase, so they never blink in
+          // unison. Threshold rather than fade, for a hard glint.
+          const ph = hash(i * 12.9898);
+          const s = Math.sin((t * 3.1 + ph * 43.7) % 6.283);
+          spark = s > 1 - sparkle * 0.35 ? Math.pow((s - (1 - sparkle * 0.35)) / (sparkle * 0.35), 0.6) : 0;
+        }
+
         for (let k = 0; k < 3; k++) {
-          // Gamma after brightness, so dimming stays perceptually smooth.
-          const v = clamp01(rgb[k]) * brightness;
+          // Gamma last, after brightness, so dimming stays perceptually smooth.
+          const v = clamp01(clamp01(rgb[k]) * gain + spark) * brightness;
           this.buf[i * 3 + k] = Math.round(255 * Math.pow(v, gamma));
         }
       }
@@ -224,6 +284,16 @@ export class Renderer {
     }
   }
 
+  /** The last frame we sent, as 0-255 RGB triplets, for UI readback. */
+  pixels() {
+    const n = this.config.working;
+    const out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      out[i] = [this.buf[i * 3], this.buf[i * 3 + 1], this.buf[i * 3 + 2]];
+    }
+    return out;
+  }
+
   status() {
     return {
       running: this.running,
@@ -231,6 +301,7 @@ export class Renderer {
       params: this.params,
       deviceBrightness: this.savedBrightness,
       animParams: this.animation ? this.animParams[this.animation] : null,
+      audio: this.currentAudio(),
       brightnessTouched: this.brightnessTouched,
       frames: this.frames,
       uptime: this.running ? (Date.now() - this.startedAt) / 1000 : 0,

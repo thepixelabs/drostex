@@ -245,6 +245,113 @@ bindSlider('brightness', (v) => String(v));
 bindSlider('speed', (v) => `${(v / 100).toFixed(1)}\u00d7`);
 bindSlider('fps', (v) => `${v} fps`);
 
+/* ── global modifiers ─────────────────────────────────────
+ *
+ * Sparkle and symmetry exist in the firmware too, but those operate on its own
+ * effect renderer. These are ours, applied to the streamed pixels, which means
+ * continuous control rather than three fixed levels and they work on every
+ * animation here.
+ */
+
+function bindModifier(id, format, key, scale = 1) {
+  const el = $(id);
+  const out = $(`${id}-out`);
+  const sync = () => { out.textContent = format(Number(el.value)); };
+  el.addEventListener('input', () => {
+    sync();
+    api('params', { [key]: Number(el.value) / scale });
+  });
+  sync();
+}
+bindModifier('sparkle-studio', (v) => String(v), 'sparkle', 100);
+bindModifier('audio-react', (v) => String(v), 'audioReact', 100);
+
+function fillSymmetry(names) {
+  const el = $('symmetry-studio');
+  if (el.dataset.filled) return;
+  el.dataset.filled = '1';
+  const pretty = { none: 'None', reverse: 'Reverse', mirror: 'Mirror',
+                   cyclic2: 'Cyclic ×2', cyclic4: 'Cyclic ×4', edgeMirror: 'Edge mirror' };
+  el.replaceChildren(...names.map((n) => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = pretty[n] ?? n;
+    return o;
+  }));
+  el.addEventListener('change', () => api('params', { symmetry: el.value }));
+}
+
+/* ── microphone ───────────────────────────────────────────
+ *
+ * The cube has its own mic, but its sound mode only drives the firmware's
+ * effects. To make OUR animations react we need audio here, so the tab
+ * captures it and ships features - not samples - to the server at ~25Hz.
+ * About 60 bytes a message over loopback.
+ *
+ * Only runs while the tab is open. The renderer fades audio to silence after
+ * ~1.5s of nothing, so closing the tab degrades gracefully instead of freezing
+ * the last loud frame.
+ */
+let micStream = null, micTimer = null;
+
+async function toggleMic() {
+  const btn = $('mic');
+  if (micStream) {
+    clearInterval(micTimer);
+    micStream.getTracks().forEach((t) => t.stop());
+    micStream = null;
+    btn.textContent = 'Enable microphone';
+    btn.classList.remove('is-on');
+    $('meter').firstElementChild.style.width = '0%';
+    api('audio', { level: 0, bass: 0, mid: 0, treble: 0 });
+    return;
+  }
+
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({
+      // Every one of these would fight us: they are tuned for speech, and would
+      // duck exactly the music we want to follow.
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    });
+  } catch {
+    btn.textContent = 'Microphone blocked';
+    return;
+  }
+
+  const ctx = new AudioContext();
+  const src = ctx.createMediaStreamSource(micStream);
+  const an = ctx.createAnalyser();
+  an.fftSize = 1024;
+  an.smoothingTimeConstant = 0.6;
+  src.connect(an);
+
+  const bins = new Uint8Array(an.frequencyBinCount);
+  const hz = ctx.sampleRate / an.fftSize;
+  const band = (lo, hi) => {
+    const a = Math.max(1, Math.floor(lo / hz)), b = Math.min(bins.length - 1, Math.ceil(hi / hz));
+    let sum = 0;
+    for (let i = a; i <= b; i++) sum += bins[i];
+    return sum / ((b - a + 1) * 255);
+  };
+
+  // Running peak with slow decay, so quiet rooms and loud ones both fill the
+  // range. Without it the useful part of the signal sits in the bottom tenth.
+  let peak = 0.15;
+  btn.textContent = 'Microphone on';
+  btn.classList.add('is-on');
+
+  micTimer = setInterval(() => {
+    an.getByteFrequencyData(bins);
+    const raw = { bass: band(20, 250), mid: band(250, 2000), treble: band(2000, 8000) };
+    const level = raw.bass * 0.5 + raw.mid * 0.35 + raw.treble * 0.15;
+    peak = Math.max(level, peak * 0.995, 0.05);
+    const norm = (x) => Math.min(1, x / peak);
+    const payload = { level: norm(level), bass: norm(raw.bass), mid: norm(raw.mid), treble: norm(raw.treble) };
+    $('meter').firstElementChild.style.width = `${Math.round(payload.level * 100)}%`;
+    api('audio', payload).catch(() => {});
+  }, 40);
+}
+$('mic').addEventListener('click', toggleMic);
+
 function syncPlayback(st) {
   const b = Math.round(st.params.brightness * 255);
   $('brightness').value = String(b);
@@ -395,6 +502,8 @@ async function poll() {
       $('brightness-out').textContent = String(v);
       brightnessSynced = true;
     }
+
+    fillSymmetry(s.config.symmetries ?? ['none']);
 
     if (s.device) {
       $('device-name').textContent = s.device.name ?? s.device.product ?? '—';

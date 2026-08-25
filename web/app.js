@@ -494,12 +494,11 @@ function bindSlider(id, format, key, scale) {
 bindSlider('speed', (v) => `${(v / 100).toFixed(1)}×`, 'speed', 100);
 bindSlider('fps', (v) => `${v} fps`, 'fps', 1);
 
+/* Brightness is deliberately absent: loading a look must never move the
+   brightness control. It is set once for the room and applies to everything. */
 function syncPlayback(st) {
   $('speed').value = String(Math.round(st.params.speed * 100));
   $('speed-out').textContent = `${st.params.speed.toFixed(1)}×`;
-  const b = Math.round(st.params.brightness * 255);
-  brightness.value = String(b);
-  $('brightness-out').textContent = String(b);
 }
 
 /* ── built-in effects ─────────────────────────────────────── */

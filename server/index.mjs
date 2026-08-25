@@ -215,14 +215,16 @@ const server = http.createServer(async (req, res) => {
           await savePresets(next);
           return json(res, 200, next);
         }
-        // A preset is a complete description of a look: which animation, its
-        // parameter values, and the playback settings.
+        // A preset describes a LOOK: which animation, its parameter values, and
+        // how fast it runs. Brightness is deliberately excluded - it is a
+        // property of the room, not of the look, and a saved one would fight
+        // the brightness control every time a preset was recalled.
         const entry = {
           id: `p${Date.now().toString(36)}`,
           name: String(body.name ?? 'Untitled').slice(0, 60),
           animation: renderer.animation,
           values: { ...renderer.animParams[renderer.animation] },
-          playback: { speed: renderer.params.speed, brightness: renderer.params.brightness },
+          playback: { speed: renderer.params.speed },
         };
         if (!entry.animation) return json(res, 400, { error: 'nothing is playing to save' });
         const next = [...presets, entry];
@@ -237,7 +239,12 @@ const server = http.createServer(async (req, res) => {
       const entry = (await loadPresets()).find((x) => x.id === id);
       if (!entry) return json(res, 404, { error: 'no such preset' });
       renderer.setAnimParams(entry.animation, entry.values);
-      if (entry.playback) renderer.setParams(entry.playback);
+      if (entry.playback) {
+        // Ignore any brightness in older saved presets, for the same reason we
+        // no longer record it.
+        const { brightness, ...playback } = entry.playback;
+        renderer.setParams(playback);
+      }
       await renderer.play(entry.animation);
       return json(res, 200, renderer.status());
     }

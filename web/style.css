@@ -42,6 +42,13 @@
 
 * { box-sizing: border-box; }
 
+/* The `hidden` attribute works by applying display:none from the UA
+   stylesheet, which ANY class rule setting display will silently override.
+   That is what kept the offline banner permanently on screen while the cube
+   was plainly connected. Making it !important means toggling `hidden` cannot
+   quietly fail again. */
+[hidden] { display: none !important; }
+
 body {
   margin: 0;
   background:
@@ -341,3 +348,5 @@ input[type=search] { flex: 1; min-width: 160px; }
 }
 
 
+
+.build { font: 10px var(--mono); color: var(--text-2); opacity: .7; }

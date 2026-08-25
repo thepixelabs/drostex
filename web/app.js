@@ -42,6 +42,7 @@ let effectsLoaded = false;
 let brightnessSynced = false;
 let deviceOnline = true;
 const PAGE_BUILD = document.querySelector('meta[name="drostex-build"]')?.content ?? '';
+$('build').textContent = PAGE_BUILD.startsWith('__') ? 'stale page' : PAGE_BUILD;
 // One missed poll is normal for a busy ESP32; only a run of them means trouble.
 let offlineStrikes = 0;
 

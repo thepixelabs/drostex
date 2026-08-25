@@ -27,6 +27,11 @@ export class Renderer {
     this.running = false;
     this.animation = null;
     this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2 };
+    // The device's own brightness before we touched it. Streaming needs the
+    // device at 255 (realtime pixels are scaled by it), but that is OUR
+    // requirement, not a change the user asked for - so it gets put back.
+    this.savedBrightness = null;
+    this.brightnessTouched = false; // true once the user moves our slider
     this.buf = Buffer.alloc(config.ledCount * 3);
     this.frames = 0;
     this.startedAt = 0;
@@ -43,15 +48,36 @@ export class Renderer {
   }
 
   /**
-   * Realtime pixels are scaled by the device's global brightness, so it has to
-   * sit at 255 and dimming has to happen locally where it can be gamma-correct.
-   * `lor` must be 0 or packets are accepted and nothing lights up.
+   * Reads the device's own brightness, then takes the device to 255.
+   *
+   * Realtime pixels are scaled by the global brightness, so full local control
+   * requires the device at maximum. But that setting belongs to the user, so we
+   * remember it, adopt it as our starting level (their preference is still
+   * honoured - it is just applied here, where it can be gamma-correct), and put
+   * it back when streaming stops.
+   *
+   * The saved value only survives the process. If Drostex is killed mid-stream
+   * the device is left at 255; the next clean stop restores whatever it reads.
    */
   async prepareDevice() {
+    try {
+      const r = await fetch(`http://${this.config.host}/json/state`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      const state = await r.json();
+      if (this.savedBrightness === null && typeof state.bri === 'number') {
+        this.savedBrightness = state.bri;
+        if (!this.brightnessTouched) this.params.brightness = state.bri / 255;
+      }
+    } catch {
+      /* cube unreachable; fall through and try to stream anyway */
+    }
+
     try {
       await fetch(`http://${this.config.host}/json/state`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
+        // lor must be 0 or packets are accepted while nothing lights up.
         body: JSON.stringify({ on: true, bri: 255, lor: 0 }),
         signal: AbortSignal.timeout(4000),
       });
@@ -60,7 +86,26 @@ export class Renderer {
     }
   }
 
+  /** Puts the user's brightness back. */
+  async restoreDevice() {
+    if (this.savedBrightness === null) return;
+    try {
+      await fetch(`http://${this.config.host}/json/state`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ bri: this.savedBrightness }),
+        signal: AbortSignal.timeout(4000),
+      });
+    } catch {
+      /* best effort */
+    }
+  }
+
   setParams(p) {
+    if (typeof p.brightness === 'number' && Number.isFinite(p.brightness)) {
+      // An explicit choice stops us re-seeding from the device on the next play.
+      this.brightnessTouched = true;
+    }
     for (const k of ['brightness', 'speed', 'fps', 'gamma']) {
       if (typeof p[k] === 'number' && Number.isFinite(p[k])) this.params[k] = p[k];
     }
@@ -80,7 +125,7 @@ export class Renderer {
     }
   }
 
-  async stop({ blank = true } = {}) {
+  async stop({ blank = true, restore = true } = {}) {
     this.running = false;
     this.animation = null;
     if (this.sock && blank) {
@@ -90,6 +135,9 @@ export class Renderer {
         await sleep(30);
       }
     }
+    // Handing over to an onboard effect still restores brightness - the effect
+    // should run at the level the user chose, not at whatever we needed.
+    if (restore) await this.restoreDevice();
   }
 
   async loop() {
@@ -128,6 +176,8 @@ export class Renderer {
       running: this.running,
       animation: this.animation,
       params: this.params,
+      deviceBrightness: this.savedBrightness,
+      brightnessTouched: this.brightnessTouched,
       frames: this.frames,
       uptime: this.running ? (Date.now() - this.startedAt) / 1000 : 0,
     };

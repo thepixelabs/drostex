@@ -19,6 +19,7 @@ const api = async (path, body) => {
 
 let current = null;      // active animation id
 let effectsLoaded = false;
+let brightnessSynced = false;
 
 /* ── tabs ─────────────────────────────────────────────────── */
 for (const tab of document.querySelectorAll('.tab')) {
@@ -85,7 +86,11 @@ function bindSlider(id, format) {
   const el = $(id);
   const out = $(`${id}-out`);
   const sync = () => { out.textContent = format(Number(el.value)); };
-  el.addEventListener('input', () => { sync(); api('params', params()); });
+  el.addEventListener('input', () => {
+    if (id === 'brightness') brightnessSynced = true; // their choice now wins
+    sync();
+    api('params', params());
+  });
   sync();
 }
 bindSlider('brightness', (v) => `${v}%`);
@@ -145,6 +150,16 @@ async function poll() {
     } else {
       setTally('onboard', 'onboard · not streaming');
       if (current !== null) markActive(null);
+    }
+
+    // Seed the slider from the cube's own brightness rather than a hardcoded
+    // default, so the app opens at the level the user already chose. Once they
+    // move it, their choice wins and we stop syncing.
+    if (!brightnessSynced && !s.renderer.brightnessTouched && s.renderer.deviceBrightness != null) {
+      const pct = Math.round(s.renderer.params.brightness * 100);
+      $('brightness').value = String(pct);
+      $('brightness-out').textContent = `${pct}%`;
+      brightnessSynced = true;
     }
 
     if (s.device) {

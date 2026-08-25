@@ -157,6 +157,17 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
+server.on('error', (e) => {
+  if (e.code === 'EADDRINUSE') {
+    console.error(`\n  Port ${PORT} is already in use.`);
+    console.error(`  Another Drostex is probably running - open http://127.0.0.1:${PORT}`);
+    console.error(`  or start this one elsewhere:  PORT=7848 npm start\n`);
+    process.exit(1);
+  }
+  console.error(`\n  ${e.message}\n`);
+  process.exit(1);
+});
+
 server.listen(PORT, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${PORT}`;
   console.log(`\n  Drostex\n`);

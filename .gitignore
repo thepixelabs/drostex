@@ -41,3 +41,6 @@ Thumbs.db
 profiles/nano-observations.json
 profiles/nano-diagnostic.json
 profiles/nano-structure.json
+
+# local device config (LAN address, MAC)
+config.json

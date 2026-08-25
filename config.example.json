@@ -1,0 +1,15 @@
+{
+  "$comment": "Copy to config.json and fill in your own device. config.json is gitignored.",
+  "device": {
+    "host": "192.168.1.50",
+    "mac": null,
+    "name": "My HyperCube"
+  },
+  "transport": {
+    "$comment": "Measured on a HyperCube Nano (hs-2.0): DDP and Art-Net ports are closed; WLED DRGB and sACN universe 1 both work. Run scripts/blink.mjs to probe your own device.",
+    "protocol": "wled-drgb",
+    "port": 21324,
+    "sacnPort": 5568,
+    "sacnUniverse": 1
+  }
+}

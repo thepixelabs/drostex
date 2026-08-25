@@ -22,9 +22,11 @@ import dgram from 'node:dgram';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { writeFileSync } from 'node:fs';
+import { loadConfig } from './lib/config.mjs';
 
-const HOST = process.argv.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? '192.168.0.108';
-const PORT = 21324; // WLED native realtime UDP — measured working in Phase 0
+const CONFIG = loadConfig();
+const HOST = CONFIG.host;
+const PORT = CONFIG.port; // WLED native realtime UDP — measured working in Phase 0
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

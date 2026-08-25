@@ -26,8 +26,10 @@
 
 import dgram from 'node:dgram';
 import { randomUUID } from 'node:crypto';
+import { loadConfig } from './lib/config.mjs';
 
-const HOST = process.argv.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? '192.168.0.108';
+const CONFIG = loadConfig();
+const HOST = CONFIG.host;
 const arg = (name, dflt) => {
   const a = process.argv.find((x) => x.startsWith(`--${name}=`));
   return a ? a.split('=')[1] : dflt;
@@ -158,7 +160,7 @@ async function main() {
     // Track 1 gets addresses 0..43, track 2 gets 44..87, each from channel 1 of
     // its own universe. If the dead upper half is simply listening elsewhere,
     // this is what wakes it up.
-    const sock = await openSocket(5568);
+    const sock = await openSocket(CONFIG.sacnPort);
     const half = Math.ceil(n / 2);
     let seq = 0;
     console.log(`\n  Sending sACN: universe 1 = addresses 0-${half - 1}, universe 2 = ${half}-${n - 1}\n`);
@@ -171,8 +173,8 @@ async function main() {
     };
     process.on('exit', () => sock.close());
   } else {
-    const sock = await openSocket(21324);
-    console.log('\n  Sending WLED DRGB on :21324\n');
+    const sock = await openSocket(CONFIG.port);
+    console.log(`\n  Sending WLED DRGB on :${CONFIG.port}\n`);
     send = () => sock.send(drgb(rgb));
     process.on('exit', () => sock.close());
   }

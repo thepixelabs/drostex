@@ -27,9 +27,11 @@ import dgram from 'node:dgram';
 import readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { writeFileSync } from 'node:fs';
+import { loadConfig } from './lib/config.mjs';
 
-const HOST = process.argv.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? '192.168.0.108';
-const PORT = 21324;
+const CONFIG = loadConfig();
+const HOST = CONFIG.host;
+const PORT = CONFIG.port;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

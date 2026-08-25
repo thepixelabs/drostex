@@ -18,8 +18,10 @@
 
 import dgram from 'node:dgram';
 import { randomUUID } from 'node:crypto';
+import { loadConfig } from './lib/config.mjs';
 
-const HOST = process.argv.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? '192.168.0.108';
+const CONFIG = loadConfig();
+const HOST = CONFIG.host;
 const CHASE = process.argv.includes('--chase');
 const RUNS = process.argv.includes('--runs');
 const SKIP_PROBE = process.argv.includes('--skip-probe');

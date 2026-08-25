@@ -63,5 +63,10 @@ export function loadConfig() {
     sacnUniverse: file.transport?.sacnUniverse ?? DEFAULTS.sacnUniverse,
     mac: file.device?.mac ?? null,
     name: file.device?.name ?? null,
+    ledCount: file.leds?.count ?? 88,
+    // Only the first N addresses drive physical LEDs; the rest are configured
+    // by the vendor but have no tap. Writing past this is harmless but useless.
+    working: file.leds?.working ?? 44,
+    perEdge: file.leds?.perEdge ?? 11,
   };
 }

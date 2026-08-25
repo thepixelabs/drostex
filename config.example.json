@@ -11,5 +11,11 @@
     "port": 21324,
     "sacnPort": 5568,
     "sacnUniverse": 1
+  },
+  "leds": {
+    "$comment": "Device reports 88 addresses but only the first 44 drive anything. Run scripts/diagnose.mjs to find yours.",
+    "count": 88,
+    "working": 44,
+    "perEdge": 11
   }
 }

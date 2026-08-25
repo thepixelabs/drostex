@@ -1,0 +1,67 @@
+{
+  "product": "HyperCube Nano",
+  "orientation": "corner-standing",
+  "blocks": [
+    {
+      "block": 0,
+      "addresses": [
+        0,
+        10
+      ],
+      "edges": {
+        "bottom": 1,
+        "middle": 0,
+        "top": 0
+      },
+      "edgeTotal": 1,
+      "startsToward": "bottom"
+    },
+    {
+      "block": 1,
+      "addresses": [
+        11,
+        21
+      ],
+      "edges": {
+        "bottom": 0,
+        "middle": 2,
+        "top": 0
+      },
+      "edgeTotal": 2,
+      "startsToward": "middle"
+    },
+    {
+      "block": 2,
+      "addresses": [
+        22,
+        32
+      ],
+      "edges": {
+        "bottom": 0,
+        "middle": 2,
+        "top": 0
+      },
+      "edgeTotal": 2,
+      "startsToward": "middle"
+    },
+    {
+      "block": 3,
+      "addresses": [
+        33,
+        43
+      ],
+      "edges": {
+        "bottom": 3,
+        "middle": 6,
+        "top": 3
+      },
+      "edgeTotal": 12,
+      "startsToward": "mixed",
+      "startDetail": {
+        "bottom": 2,
+        "top": 1
+      }
+    }
+  ],
+  "$note": "Counts did not balance (16 across groups vs 12 real edges) and disagreed with an earlier colour run. Kept as raw observation only - not used as a geometry source. Visual edge-counting on a mirrored cube proved unreliable; animations are indexed by address instead."
+}

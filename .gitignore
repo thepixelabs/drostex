@@ -44,3 +44,6 @@ profiles/nano-structure.json
 
 # local device config (LAN address, MAC)
 config.json
+
+# saved looks — user data, not source
+presets.json

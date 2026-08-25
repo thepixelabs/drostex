@@ -28,27 +28,59 @@
 
   <!-- ── Studio ───────────────────────────────────────────── -->
   <section id="panel-studio" class="panel is-active" role="tabpanel">
-    <div class="grid" id="animations" aria-label="Animations"></div>
+    <div class="studio">
+      <div class="studio-main">
+        <div class="grid" id="animations" aria-label="Animations"></div>
 
-    <div class="controls">
-      <div class="control">
-        <label for="brightness">Brightness <output id="brightness-out">85%</output></label>
-        <input type="range" id="brightness" min="0" max="100" value="85">
+        <div class="controls">
+          <div class="control">
+            <label for="brightness">Brightness <output id="brightness-out">217</output></label>
+            <input type="range" id="brightness" min="0" max="255" value="217">
+          </div>
+          <div class="control">
+            <label for="speed">Speed <output id="speed-out">1.0&times;</output></label>
+            <input type="range" id="speed" min="10" max="300" value="100">
+          </div>
+          <div class="control">
+            <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
+            <input type="range" id="fps" min="10" max="60" value="40">
+          </div>
+          <div class="toggles">
+            <label class="switch">
+              <input type="checkbox" id="sb-studio">
+              <span>Pulse brightness to music</span>
+            </label>
+            <button class="btn btn-stop" id="stop">Stop &amp; release</button>
+          </div>
+        </div>
       </div>
-      <div class="control">
-        <label for="speed">Speed <output id="speed-out">1.0×</output></label>
-        <input type="range" id="speed" min="10" max="300" value="100">
-      </div>
-      <div class="control">
-        <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
-        <input type="range" id="fps" min="10" max="60" value="40">
-      </div>
-      <button class="btn btn-stop" id="stop">Stop &amp; release</button>
+
+      <aside class="inspector" id="inspector" hidden>
+        <div class="inspector-head">
+          <strong id="inspector-title">&mdash;</strong>
+          <button class="link" id="reset-params" title="Restore defaults">Reset</button>
+        </div>
+        <div id="params"></div>
+
+        <div class="inspector-head" style="margin-top:22px">
+          <strong>Saved looks</strong>
+        </div>
+        <div class="save-row">
+          <input type="text" id="preset-name" placeholder="Name this look" maxlength="60">
+          <button class="btn" id="save-preset">Save</button>
+        </div>
+        <div id="presets" class="presets"></div>
+      </aside>
     </div>
+
     <p class="hint">
       Stopping hands the cube back to its own firmware after about 2&nbsp;seconds.
       Animations keep running if you close this tab &mdash; the pixels are computed
       by the local process, not the page.
+      <br><br>
+      <strong>Pulse to music</strong> uses the cube&rsquo;s own microphone, not your
+      computer&rsquo;s. Whether it affects streamed animations or only the onboard
+      effects is untested &mdash; play something and see.
     </p>
   </section>
 
@@ -58,12 +90,52 @@
       These run on the cube itself, so they survive closing Drostex entirely.
       Picking one stops the live stream &mdash; only one source can drive the LEDs.
     </p>
-    <div class="row">
-      <label for="palette">Palette</label>
-      <select id="palette"></select>
+
+    <div class="controls" style="margin-bottom:20px">
+      <div class="row-wrap">
+        <label class="switch"><input type="checkbox" id="power"><span>Power</span></label>
+        <label class="switch"><input type="checkbox" id="sb"><span>Pulse to music</span></label>
+        <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>
+        <label class="switch"><input type="checkbox" id="nl"><span>Nightlight</span></label>
+      </div>
+
+      <div class="control">
+        <label for="dev-bri">Cube brightness <output id="dev-bri-out">&mdash;</output></label>
+        <input type="range" id="dev-bri" min="1" max="255" value="150">
+      </div>
+      <div class="control">
+        <label for="sx">Effect speed <output id="sx-out">&mdash;</output></label>
+        <input type="range" id="sx" min="0" max="255" value="128">
+      </div>
+      <div class="control">
+        <label for="ix">Effect intensity <output id="ix-out">&mdash;</output></label>
+        <input type="range" id="ix" min="0" max="255" value="128">
+      </div>
+
+      <div class="row-wrap">
+        <span class="field">
+          <label for="palette">Palette</label>
+          <select id="palette"></select>
+        </span>
+        <span class="field">
+          <label for="symmetry">Symmetry</label>
+          <select id="symmetry"></select>
+        </span>
+        <span class="field">
+          <label for="sparkle">Sparkle</label>
+          <select id="sparkle">
+            <option value="0">Off</option>
+            <option value="1">Low</option>
+            <option value="2">High</option>
+          </select>
+        </span>
+        <button class="btn btn-warp" id="warp">Warp drive</button>
+      </div>
     </div>
+
     <div class="grid grid-dense" id="effects" aria-label="Built-in effects"></div>
   </section>
+
 </main>
 
 <footer class="statusbar">

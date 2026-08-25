@@ -177,3 +177,94 @@ select {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ── switches, grouped rows ──────────────────────────────── */
+.toggles { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.row-wrap { display: flex; align-items: flex-end; gap: 18px; flex-wrap: wrap; }
+
+.switch { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--text-2); }
+.switch input { appearance: none; -webkit-appearance: none; margin: 0; cursor: pointer;
+  width: 34px; height: 19px; border-radius: 100px;
+  background: var(--hairline); border: 1px solid var(--hairline);
+  position: relative; transition: background var(--dur) var(--ease); }
+.switch input::after { content: ''; position: absolute; top: 2px; left: 2px;
+  width: 13px; height: 13px; border-radius: 50%; background: var(--text-3);
+  transition: transform var(--dur) var(--ease), background var(--dur) var(--ease); }
+.switch input:checked { background: var(--accent-dim); border-color: var(--accent); }
+.switch input:checked::after { transform: translateX(15px); background: #fff; }
+.switch input:checked + span { color: var(--text-1); }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field label { font-size: 13px; color: var(--text-2); }
+
+.btn-warp { align-self: flex-end; }
+.btn-warp:hover { border-color: var(--accent); color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: not-allowed; border-color: var(--hairline); color: var(--text-3); }
+
+/* ── studio: canvas + inspector ──────────────────────────── */
+.studio { display: grid; grid-template-columns: 1fr; gap: 18px; }
+@media (min-width: 900px) {
+  .studio { grid-template-columns: minmax(0, 1fr) 280px; align-items: start; }
+}
+
+.inspector {
+  background: var(--bg-surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px;
+  position: sticky; top: 16px;
+}
+.inspector-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 12px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--hairline);
+}
+.inspector-head strong { font-size: 13px; letter-spacing: .02em; }
+
+.link {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  color: var(--text-3); font: 12px var(--sans);
+}
+.link:hover { color: var(--accent); }
+
+.param { margin-bottom: 14px; }
+.param > label {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  font-size: 12px; color: var(--text-2); margin-bottom: 6px;
+}
+.param output { font: 11px var(--mono); color: var(--text-1); }
+.param .hint { font-size: 11px; color: var(--text-3); margin: 4px 0 0; line-height: 1.4; }
+.param select, .param input[type=text] { width: 100%; }
+
+input[type=color] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 30px; padding: 0; cursor: pointer;
+  background: none; border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+}
+input[type=color]::-webkit-color-swatch-wrapper { padding: 3px; }
+input[type=color]::-webkit-color-swatch { border: 0; border-radius: 2px; }
+
+.save-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.save-row input {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px;
+  background: var(--bg-raised); color: var(--text-1);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 7px 9px;
+}
+.save-row .btn { padding: 7px 12px; font-size: 13px; }
+.save-row .btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.presets { display: flex; flex-direction: column; gap: 5px; }
+.preset {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: var(--bg-raised); border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm); padding: 7px 10px;
+}
+.preset button.load {
+  flex: 1; text-align: left; background: none; border: 0; padding: 0;
+  color: var(--text-1); font: inherit; font-size: 13px; cursor: pointer;
+}
+.preset button.load:hover { color: var(--accent); }
+.preset .meta { font: 10px var(--mono); color: var(--text-3); }
+.preset .del { background: none; border: 0; color: var(--text-3); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+.preset .del:hover { color: var(--stream); }
+.empty { color: var(--text-3); font-size: 12px; }

@@ -15,7 +15,7 @@
  */
 
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -30,6 +30,16 @@ const PORT = Number(process.env.PORT ?? 7847);
 
 const CONFIG = loadConfig();
 const renderer = new Renderer(CONFIG);
+
+const PRESETS = join(ROOT, 'presets.json');
+
+/** Presets live in a plain JSON file - they are user data, not source. */
+async function loadPresets() {
+  try { return JSON.parse(await readFile(PRESETS, 'utf8')); } catch { return []; }
+}
+async function savePresets(list) {
+  await writeFile(PRESETS, JSON.stringify(list, null, 2) + '\n');
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -103,7 +113,54 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/animations') {
       return json(res, 200, Object.entries(ANIMATIONS).map(([id, a]) => ({
         id, label: a.label ?? id, desc: a.desc ?? '',
+        params: a.params ?? {},
+        values: renderer.animParams[id],
       })));
+    }
+
+    if (p === '/api/anim-params' && req.method === 'POST') {
+      const { name, values, reset } = await readBody(req);
+      const target = name ?? renderer.animation;
+      if (!target) return json(res, 400, { error: 'no animation selected' });
+      const out = reset ? renderer.resetAnimParams(target)
+                        : renderer.setAnimParams(target, values);
+      return json(res, 200, { name: target, values: out });
+    }
+
+    if (p === '/api/presets') {
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        const presets = await loadPresets();
+        if (body.delete) {
+          const next = presets.filter((x) => x.id !== body.delete);
+          await savePresets(next);
+          return json(res, 200, next);
+        }
+        // A preset is a complete description of a look: which animation, its
+        // parameter values, and the playback settings.
+        const entry = {
+          id: `p${Date.now().toString(36)}`,
+          name: String(body.name ?? 'Untitled').slice(0, 60),
+          animation: renderer.animation,
+          values: { ...renderer.animParams[renderer.animation] },
+          playback: { speed: renderer.params.speed, brightness: renderer.params.brightness },
+        };
+        if (!entry.animation) return json(res, 400, { error: 'nothing is playing to save' });
+        const next = [...presets, entry];
+        await savePresets(next);
+        return json(res, 200, next);
+      }
+      return json(res, 200, await loadPresets());
+    }
+
+    if (p === '/api/presets/load' && req.method === 'POST') {
+      const { id } = await readBody(req);
+      const entry = (await loadPresets()).find((x) => x.id === id);
+      if (!entry) return json(res, 404, { error: 'no such preset' });
+      renderer.setAnimParams(entry.animation, entry.values);
+      if (entry.playback) renderer.setParams(entry.playback);
+      await renderer.play(entry.animation);
+      return json(res, 200, renderer.status());
     }
 
     if (p === '/api/play' && req.method === 'POST') {
@@ -126,7 +183,10 @@ const server = http.createServer(async (req, res) => {
       if (req.method === 'POST') {
         const body = await readBody(req);
         // Any onboard-effect change means we are no longer the pixel source.
-        if (body.fx !== undefined || body.pal !== undefined) await renderer.stop({ blank: false });
+        const seg = body.seg?.[0] ?? {};
+        // Choosing an effect means the firmware is the pixel source now. Do not
+        // blank first - that would flash black between the two sources.
+        if (seg.fx !== undefined) await renderer.stop({ blank: false });
         return json(res, 200, await device('/json/state', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -134,6 +194,15 @@ const server = http.createServer(async (req, res) => {
         }));
       }
       return json(res, 200, await device('/json/state'));
+    }
+
+    if (p === '/api/warp' && req.method === 'POST') {
+      // One-shot vendor animation with a 15s cooldown in their own UI.
+      return json(res, 200, await device('/json/state', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ warp: true }),
+      }));
     }
 
     if (p === '/api/effects') {
@@ -167,6 +236,8 @@ server.on('error', (e) => {
   console.error(`\n  ${e.message}\n`);
   process.exit(1);
 });
+
+await renderer.captureFromDevice();
 
 server.listen(PORT, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${PORT}`;

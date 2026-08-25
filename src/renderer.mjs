@@ -7,7 +7,7 @@
  */
 
 import dgram from 'node:dgram';
-import { ANIMATIONS, makeContext, clamp01 } from './animations.mjs';
+import { ANIMATIONS, makeContext, clamp01, defaultParams } from './animations.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -31,6 +31,11 @@ export class Renderer {
     // device at 255 (realtime pixels are scaled by it), but that is OUR
     // requirement, not a change the user asked for - so it gets put back.
     this.savedBrightness = null;
+    // Per-animation parameter values, seeded from each schema's defaults and
+    // kept independently so switching back and forth does not lose your edits.
+    this.animParams = Object.fromEntries(
+      Object.keys(ANIMATIONS).map((k) => [k, defaultParams(k)]),
+    );
     this.brightnessTouched = false; // true once the user moves our slider
     this.buf = Buffer.alloc(config.ledCount * 3);
     this.frames = 0;
@@ -65,10 +70,7 @@ export class Renderer {
         signal: AbortSignal.timeout(4000),
       });
       const state = await r.json();
-      if (this.savedBrightness === null && typeof state.bri === 'number') {
-        this.savedBrightness = state.bri;
-        if (!this.brightnessTouched) this.params.brightness = state.bri / 255;
-      }
+      this.captureBrightness(state.bri);
     } catch {
       /* cube unreachable; fall through and try to stream anyway */
     }
@@ -84,6 +86,56 @@ export class Renderer {
     } catch {
       /* non-fatal: streaming may still work */
     }
+  }
+
+  /**
+   * Records the device's brightness as the user's own, once.
+   *
+   * Called at startup rather than at first play, because the vendor's `warp`
+   * animation ends by setting brightness to 255 - so a value read after one has
+   * run is ours by accident, not theirs.
+   */
+  captureBrightness(bri) {
+    if (this.savedBrightness !== null || typeof bri !== 'number') return;
+    this.savedBrightness = bri;
+    if (!this.brightnessTouched) this.params.brightness = bri / 255;
+  }
+
+  /** Reads the device's current brightness and remembers it. */
+  async captureFromDevice() {
+    try {
+      const r = await fetch(`http://${this.config.host}/json/state`, {
+        signal: AbortSignal.timeout(4000),
+      });
+      this.captureBrightness((await r.json()).bri);
+    } catch { /* cube offline; try again on first play */ }
+  }
+
+  /** Merges values into one animation's parameters, ignoring unknown keys. */
+  setAnimParams(name, values) {
+    const schema = ANIMATIONS[name]?.params;
+    if (!schema) throw new Error(`unknown animation: ${name}`);
+    const cur = this.animParams[name];
+    for (const [k, v] of Object.entries(values ?? {})) {
+      const def = schema[k];
+      if (!def) continue;
+      if (def.type === 'number') {
+        const n = Number(v);
+        if (Number.isFinite(n)) cur[k] = Math.min(def.max ?? n, Math.max(def.min ?? n, n));
+      } else if (def.type === 'boolean') {
+        cur[k] = Boolean(v);
+      } else if (def.type === 'select') {
+        if (def.options.includes(v)) cur[k] = v;
+      } else {
+        cur[k] = String(v);
+      }
+    }
+    return cur;
+  }
+
+  resetAnimParams(name) {
+    this.animParams[name] = defaultParams(name);
+    return this.animParams[name];
   }
 
   /** Puts the user's brightness back. */
@@ -150,9 +202,10 @@ export class Renderer {
 
       const t = (Date.now() - this.startedAt) / 1000;
       const { brightness, speed, gamma } = this.params;
+      const params = this.animParams[name];
 
       for (let i = 0; i < n; i++) {
-        const rgb = anim.fn(makeContext(i, n, perEdge, t, speed));
+        const rgb = anim.fn(makeContext(i, n, perEdge, t, speed, params));
         for (let k = 0; k < 3; k++) {
           // Gamma after brightness, so dimming stays perceptually smooth.
           const v = clamp01(rgb[k]) * brightness;
@@ -177,6 +230,7 @@ export class Renderer {
       animation: this.animation,
       params: this.params,
       deviceBrightness: this.savedBrightness,
+      animParams: this.animation ? this.animParams[this.animation] : null,
       brightnessTouched: this.brightnessTouched,
       frames: this.frames,
       uptime: this.running ? (Date.now() - this.startedAt) / 1000 : 0,

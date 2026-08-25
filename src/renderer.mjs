@@ -7,7 +7,7 @@
  */
 
 import dgram from 'node:dgram';
-import { ANIMATIONS, makeContext, clamp01, defaultParams, SYMMETRIES } from './animations.mjs';
+import { ANIMATIONS, makeContext, clamp01, defaultParams, SYMMETRIES, hash } from './animations.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -37,7 +37,15 @@ export class Renderer {
     // `symmetry` is ours, not the device's. The firmware's own symmetry was
     // measured not to reach streamed pixels - it runs inside its effect
     // renderer, which realtime data bypasses.
-    this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2, symmetry: 'none' };
+    // `symmetry` and `sparkle` are ours, not the device's.
+    //
+    // The firmware applies its own versions inside its effect renderer, and
+    // realtime data replaces the buffer afterwards - so none of it survives on
+    // streamed pixels. The earlier belief that sparkle did survive came from
+    // watching the cube's reported power draw fluctuate, but that estimate
+    // covers all 88 configured addresses while only the first 44 have LEDs
+    // behind them: the firmware was sparkling into pixels that do not exist.
+    this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2, symmetry: 'none', sparkle: 0 };
     // The device's own brightness before we touched it. Streaming needs the
     // device at 255 (realtime pixels are scaled by it), but that is OUR
     // requirement, not a change the user asked for - so it gets put back.
@@ -170,6 +178,7 @@ export class Renderer {
 
   setParams(p) {
     if (typeof p.symmetry === 'string' && SYMMETRIES[p.symmetry]) this.params.symmetry = p.symmetry;
+    if (Number.isFinite(Number(p.sparkle))) this.params.sparkle = clamp01(Number(p.sparkle));
     if (typeof p.brightness === 'number' && Number.isFinite(p.brightness)) {
       // An explicit choice stops us re-seeding from the device on the next play.
       this.brightnessTouched = true;
@@ -221,15 +230,25 @@ export class Renderer {
       if (!anim) break;
 
       const t = (Date.now() - this.startedAt) / 1000;
-      const { brightness, speed, gamma, symmetry } = this.params;
+      const { brightness, speed, gamma, symmetry, sparkle } = this.params;
       const params = this.animParams[name];
       const fold = SYMMETRIES[symmetry] ?? SYMMETRIES.none;
 
       for (let i = 0; i < n; i++) {
         const rgb = anim.fn(makeContext(fold(i, n, perEdge), n, perEdge, t, speed, params));
+
+        let spark = 0;
+        if (sparkle > 0) {
+          // Each address twinkles on its own phase so they never blink in
+          // unison, and thresholds rather than fades, for a hard glint.
+          const gate = 1 - sparkle * 0.4;
+          const v = Math.sin((t * 3.1 + hash(i * 12.9898) * 43.7) % 6.283);
+          if (v > gate) spark = Math.pow((v - gate) / (1 - gate), 0.6);
+        }
+
         for (let k = 0; k < 3; k++) {
           // Gamma last, after brightness, so dimming stays perceptually smooth.
-          const v = clamp01(rgb[k]) * brightness;
+          const v = clamp01(clamp01(rgb[k]) + spark) * brightness;
           this.buf[i * 3 + k] = Math.round(255 * Math.pow(v, gamma));
         }
       }

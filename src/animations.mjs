@@ -133,20 +133,20 @@ export const ANIMATIONS = {
     label: 'Comet',
     desc: 'a bright head with an exponential tail, orbiting the cube',
     params: {
-      tail: num('Tail length', 0.55, 0, 1, 0.01),
+      tail: num('Tail length', 12, 1, 44, 1, 'LEDs'),
       glow: num('Glow', 0.6, 0, 1, 0.01, 'soft halo around the head'),
       hue: num('Hue', 0.55, 0, 1),
       hueShift: num('Hue shift', 0.4, 0, 1, 0.01, 'colour change as it orbits'),
       count: num('Comets', 1, 1, 4, 1),
     },
-    fn: ({ uw, t, speed, p }) => {
+    fn: ({ uw, n, t, speed, p }) => {
       let out = [0, 0, 0];
+      // `tail` is a real LED count: the falloff is chosen so brightness has
+      // dropped to about a tenth that many LEDs behind the head.
+      const falloff = (2.303 * n) / Math.max(1, p.tail);
       for (let k = 0; k < p.count; k++) {
         const head = fract(t * 0.25 * speed + k / p.count);
         const d = ringDist(uw, head);
-        // Higher `tail` must mean a LONGER tail, so it maps to a gentler
-        // exponential falloff, not a larger coefficient.
-        const falloff = 60 - p.tail * 56;
         const v = Math.exp(-d * falloff) + p.glow * Math.exp(-d * falloff * 0.27);
         const c = hsv(p.hue + head * p.hueShift, 0.7, 1);
         out = out.map((x, j) => Math.max(x, c[j] * clamp01(v)));

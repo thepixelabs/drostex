@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
+<meta name="drostex-build" content="__BUILD__">
 <title>Drostex</title>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%237C5CFC'/><rect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
@@ -39,17 +40,10 @@
     <input type="range" id="brightness" min="0" max="255" value="150">
   </div>
 
-  <div class="mod">
-    <label for="sparkle">Sparkle</label>
-    <div class="seg" id="sparkle" role="group" aria-label="Sparkle">
-      <button data-v="0" class="is-on">Off</button>
-      <button data-v="1">Low</button>
-      <button data-v="2">High</button>
-    </div>
-  </div>
-
   <p class="mod-note" id="mod-note" hidden>
-    These apply to everything &mdash; your looks and the built-in effects alike.
+    Power and brightness apply to everything. Sparkle, symmetry and pulse-to-music
+    exist separately for your looks and for the built-in effects, because the cube
+    applies its own only to its own.
     <button class="link" id="mod-note-x">Got it</button>
   </p>
 </section>
@@ -84,6 +78,10 @@
           <div class="mod mod-wide">
             <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
             <input type="range" id="fps" min="10" max="60" value="40">
+          </div>
+          <div class="mod mod-wide">
+            <label for="sparkle-studio">Sparkle <output id="sparkle-studio-out">0</output></label>
+            <input type="range" id="sparkle-studio" min="0" max="100" value="0">
           </div>
           <span class="field">
             <label for="symmetry">Symmetry</label>
@@ -139,6 +137,14 @@
       <span class="field">
         <label for="fx-symmetry">Symmetry</label>
         <select id="fx-symmetry"></select>
+      </span>
+      <span class="field">
+        <label for="fx-sparkle">Sparkle</label>
+        <div class="seg" id="fx-sparkle" role="group" aria-label="Sparkle">
+          <button data-v="0" class="is-on">Off</button>
+          <button data-v="1">Low</button>
+          <button data-v="2">High</button>
+        </div>
       </span>
       <label class="switch"><input type="checkbox" id="sb"><span>Pulse to music</span></label>
       <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>

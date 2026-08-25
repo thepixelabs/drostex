@@ -41,6 +41,7 @@ let palettes = {};         // name -> [[r,g,b] x7]
 let effectsLoaded = false;
 let brightnessSynced = false;
 let deviceOnline = true;
+const PAGE_BUILD = document.querySelector('meta[name="drostex-build"]')?.content ?? '';
 // One missed poll is normal for a busy ESP32; only a run of them means trouble.
 let offlineStrikes = 0;
 
@@ -427,7 +428,17 @@ function bindSeg(id, onPick) {
     onPick(b.dataset.v);
   });
 }
-bindSeg('sparkle', (v) => api('device/state', { sparkle: Number(v) }));
+bindSeg('fx-sparkle', (v) => api('device/state', { sparkle: Number(v) }));
+
+// Ours, for streamed animations. Continuous rather than the firmware's three
+// steps, and it actually reaches the 44 addresses that have LEDs behind them.
+(() => {
+  const el = $('sparkle-studio');
+  el.addEventListener('input', () => {
+    $('sparkle-studio-out').textContent = el.value;
+    api('params', { sparkle: Number(el.value) / 100 }).catch(() => {});
+  });
+})();
 
 /* Two symmetry controls, because they are two different things and each only
    works in one place. Ours folds the sampling index of a streamed animation;
@@ -631,6 +642,15 @@ async function poll() {
   try {
     const s = await api('status');
 
+    // The page is older than the server it is talking to. Say exactly that,
+    // instead of letting the resulting 404s look like a missing cube.
+    if (s.build && PAGE_BUILD && s.build !== PAGE_BUILD) {
+      setOffline(true, 'This page is out of date.',
+        'Drostex was updated while this tab was open. Reload to pick up the new version.');
+      setTally('offline', 'reload needed');
+      return;
+    }
+
     if (s.online) {
       offlineStrikes = 0;
       setOffline(false);
@@ -674,7 +694,7 @@ async function poll() {
       $('power').checked = Boolean(s.device.on ?? true);
       if (s.device.sym != null) $('fx-symmetry').value = String(s.device.sym);
       if (s.device.sparkle != null) {
-        for (const b of $('sparkle').children) {
+        for (const b of $('fx-sparkle').children) {
           b.classList.toggle('is-on', b.dataset.v === String(s.device.sparkle));
         }
       }

@@ -15,6 +15,7 @@
  */
 
 import http from 'node:http';
+import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,6 +31,19 @@ const PORT = Number(process.env.PORT ?? 7847);
 
 const CONFIG = loadConfig();
 const renderer = new Renderer(CONFIG);
+
+/**
+ * A build stamp over the served assets, injected into the page and reported by
+ * /api/status. If the two disagree the page is older than the server, which
+ * happens whenever a server is left running across an update - a failure that
+ * previously surfaced as "can't reach the cube" and sent people looking at
+ * their network.
+ */
+const BUILD = createHash('sha1')
+  .update(await readFile(join(ROOT, 'web/app.js')))
+  .update(await readFile(join(ROOT, 'web/index.html')))
+  .update(await readFile(join(ROOT, 'web/style.css')))
+  .digest('hex').slice(0, 8);
 
 const PRESETS = join(ROOT, 'presets.json');
 
@@ -87,7 +101,10 @@ async function serveStatic(req, res) {
   const file = normalize(join(WEB, path));
   if (!file.startsWith(WEB)) { res.writeHead(403); return res.end('forbidden'); }
   try {
-    const body = await readFile(file);
+    let body = await readFile(file);
+    if (file.endsWith('index.html')) {
+      body = Buffer.from(body.toString().replace('__BUILD__', BUILD));
+    }
     res.writeHead(200, {
       'content-type': MIME[extname(file)] ?? 'application/octet-stream',
       'cache-control': 'no-store',
@@ -130,6 +147,7 @@ const server = http.createServer(async (req, res) => {
           symmetries: SYMMETRY_NAMES,
         },
         online: Boolean(dev),
+        build: BUILD,
       });
     }
 

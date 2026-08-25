@@ -36,3 +36,8 @@ docs/internal/
 # OS
 .DS_Store
 Thumbs.db
+
+# raw per-device measurement captures (contain MAC / LAN IP)
+profiles/nano-observations.json
+profiles/nano-diagnostic.json
+profiles/nano-structure.json

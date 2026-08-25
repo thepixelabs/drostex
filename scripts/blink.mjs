@@ -22,6 +22,11 @@ import { randomUUID } from 'node:crypto';
 const HOST = process.argv.find((a) => /^\d+\.\d+\.\d+\.\d+$/.test(a)) ?? '192.168.0.108';
 const CHASE = process.argv.includes('--chase');
 const RUNS = process.argv.includes('--runs');
+const SKIP_PROBE = process.argv.includes('--skip-probe');
+const HOLD_MS = (() => {
+  const a = process.argv.find((x) => x.startsWith('--hold='));
+  return a ? Math.round(parseFloat(a.split('=')[1]) * 1000) : 5000;
+})();
 
 const PORTS = { ddp: 4048, wled: 21324, sacn: 5568, artnet: 6454 };
 
@@ -250,6 +255,12 @@ async function main() {
   const rgb = Buffer.alloc(n * 3);
   rgb[0] = 255;
 
+  if (SKIP_PROBE) {
+    console.log('\nSkipping transport probe (--skip-probe), using WLED DRGB.\n');
+    await walkRuns('wled', n, 11, HOLD_MS);
+    return;
+  }
+
   console.log('\nProbing transports (LED 0 red, all others off):');
   const results = {
     ddp: await probe('DDP', PORTS.ddp, buildDDP, rgb),
@@ -275,7 +286,7 @@ async function main() {
   console.log('─'.repeat(60));
 
   if (RUNS) {
-    await walkRuns(key, n);
+    await walkRuns(key, n, 11, HOLD_MS);
     return;
   }
 
@@ -335,7 +346,19 @@ async function walkRuns(key, n, perEdge = 11, holdMs = 5000) {
   let seq = 1;
 
   console.log(`\nWalking ${runs} runs of ${perEdge} LEDs, ${holdMs / 1000}s each.`);
-  console.log('For each one, note how many EDGES light up (1 or 2).\n');
+  console.log('For each one, count how many EDGES light up (1 or 2).\n');
+
+  // Blank the cube and count down, so nothing lights before you are looking.
+  const off = Buffer.alloc(n * 3);
+  for (let i = 0; i < 6; i++) await send(sock, build(off, (seq++ % 15) + 1));
+  for (let c = 5; c > 0; c--) {
+    process.stdout.write(`\r  Starting in ${c}...  `);
+    for (let i = 0; i < 6; i++) {
+      await send(sock, build(off, (seq++ % 15) + 1));
+      await sleep(150);
+    }
+  }
+  console.log('\r  Go.                 \n');
 
   for (let r = 0; r < runs; r++) {
     const start = r * perEdge;

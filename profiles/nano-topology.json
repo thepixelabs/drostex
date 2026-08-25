@@ -1,0 +1,82 @@
+{
+  "$comment": "Measured topology of the HyperCube Nano. Derived from observation, not documentation - the vendor publishes none of this and its own numbers disagree with the controller's.",
+  "device": {
+    "product": "HyperCube Nano",
+    "firmware": "hs-2.0",
+    "reportedLedCount": 88,
+    "responsiveAddresses": 44,
+    "deadAddresses": "44-87 - configured but no physical tap exists",
+    "transport": {
+      "primary": "wled-drgb:21324",
+      "fallback": "sacn-universe-1:5568"
+    },
+    "$comment": "Identifiers omitted deliberately; this describes the product, not one unit."
+  },
+  "physical": {
+    "edges": 12,
+    "ledsPerEdge": 11,
+    "totalLeds": 132
+  },
+  "topology": {
+    "kind": "branching-parallel",
+    "$comment": "One data line enters on a vertical edge and splits at corners. Every edge downstream of a split carries the same signal, so those edges always show identical colour. Fan-out is UNEVEN, which is why no single 'LEDs per address' figure exists.",
+    "blocks": [
+      {
+        "block": 0,
+        "addresses": [
+          0,
+          10
+        ],
+        "edgeCount": 1,
+        "leds": 11,
+        "observed": "1 vertical edge"
+      },
+      {
+        "block": 1,
+        "addresses": [
+          11,
+          21
+        ],
+        "edgeCount": 2,
+        "leds": 22,
+        "observed": "2 top edges, opposite directions"
+      },
+      {
+        "block": 2,
+        "addresses": [
+          22,
+          32
+        ],
+        "edgeCount": 4,
+        "leds": 44,
+        "observed": "2 vertical + 2 top edges"
+      },
+      {
+        "block": 3,
+        "addresses": [
+          33,
+          43
+        ],
+        "edgeCount": 5,
+        "leds": 55,
+        "observed": "1 vertical + 4 bottom edges"
+      }
+    ],
+    "checksum": {
+      "edges": 12,
+      "leds": 132
+    }
+  },
+  "consequences": [
+    "44 independently controllable pixels, not 132.",
+    "Edges within a block are electrically ganged and cannot differ in colour.",
+    "Position along an edge IS controllable - address k of a block maps to position k on every edge that block drives.",
+    "A single point cannot traverse the cube's perimeter; it appears on 1, 2, 4 or 5 edges depending on which block it is in.",
+    "Radial, symmetric and blooming patterns suit this hardware. Per-edge independent control does not."
+  ],
+  "openQuestions": [
+    "Exact identity of each edge per block (which vertical, which top edge).",
+    "Direction of travel on each edge within a block - test 5 showed ends map to ends, but not which end is which.",
+    "Whether the 1/2/4/5 split is exact or whether block boundaries sit slightly off the 11-address grid."
+  ]
+}

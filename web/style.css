@@ -366,3 +366,5 @@ input[type=search] { flex: 1; min-width: 160px; }
   padding-bottom: 4px; margin-left: auto; white-space: nowrap;
 }
 .cycle-now b { color: var(--text-1); font-weight: 500; }
+
+.cycle-note { flex-basis: 100%; margin: 2px 0 0; font-size: 12px; color: var(--text-2); }

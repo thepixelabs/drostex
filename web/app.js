@@ -510,10 +510,25 @@ $('cycle-interval').addEventListener('input', () => {
 });
 $('cycle-interval').addEventListener('change', pushCycle);
 
+/* Who is actually running the rotation is invisible otherwise, and it decides
+   whether it keeps going once this server stops. */
+function cycleNote(c) {
+  const el = $('cycle-note');
+  if (!c.enabled) { el.hidden = true; return; }
+  el.hidden = false;
+  el.textContent = c.pool.startsWith('effects')
+    ? 'Drostex is switching the effect, so this stops when the server does. '
+      + 'For a rotation that runs on its own, use the cube\u2019s own rotations '
+      + 'under Built-in effects.'
+    : 'Drostex computes these, so the server has to keep running.';
+}
+
 function renderCycle(c) {
   if (!c) return;
   fillCyclePools(c.pools);
   if (document.activeElement !== $('cycle-on')) $('cycle-on').checked = c.enabled;
+  if (document.activeElement !== $('cycle-pool') && c.pool) $('cycle-pool').value = c.pool;
+  cycleNote(c);
   const now = $('cycle-now');
   if (!c.enabled) { now.textContent = ''; return; }
   const left = c.secondsLeft ?? 0;

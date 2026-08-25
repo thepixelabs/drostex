@@ -473,6 +473,64 @@ const FX_SYMMETRY = ['Default', 'None', 'Cubic', 'Helical', 'Trigonal',
   el.addEventListener('change', () => api('device/state', { seg: [{ sym: Number(el.value) }] }));
 })();
 
+/* ── auto-cycle ───────────────────────────────────────────
+ *
+ * Rotates through a chosen pool across BOTH sources. The pools are separable
+ * because a silent room makes sound-reactive effects look broken, while a party
+ * wants only those.
+ */
+let cyclePoolsFilled = false;
+
+function fillCyclePools(pools) {
+  if (cyclePoolsFilled || !pools) return;
+  cyclePoolsFilled = true;
+  const el = $('cycle-pool');
+  el.replaceChildren(...Object.entries(pools).map(([v, label]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = label;
+    return o;
+  }));
+}
+
+const pushCycle = () => api('cycle', {
+  enabled: $('cycle-on').checked,
+  pool: $('cycle-pool').value,
+  interval: Number($('cycle-interval').value),
+  order: $('cycle-order').value,
+}).catch(() => {});
+
+for (const id of ['cycle-on', 'cycle-pool', 'cycle-order']) {
+  $(id).addEventListener('change', pushCycle);
+}
+$('cycle-interval').addEventListener('input', () => {
+  const v = Number($('cycle-interval').value);
+  $('cycle-interval-out').textContent = v >= 60
+    ? `${Math.round(v / 60)}m${v % 60 ? ` ${v % 60}s` : ''}`
+    : `${v}s`;
+});
+$('cycle-interval').addEventListener('change', pushCycle);
+
+function renderCycle(c) {
+  if (!c) return;
+  fillCyclePools(c.pools);
+  if (document.activeElement !== $('cycle-on')) $('cycle-on').checked = c.enabled;
+  const now = $('cycle-now');
+  if (!c.enabled) { now.textContent = ''; return; }
+  const left = c.secondsLeft ?? 0;
+  const secs = document.createElement('span');
+  secs.id = 'cycle-left';
+  secs.textContent = `${left}s`;
+
+  now.replaceChildren();
+  if (c.current) {
+    const b = document.createElement('b');
+    b.textContent = c.current;
+    now.append('now ', b, ' · next in ', secs);
+  } else {
+    now.append('next in ', secs);
+  }
+}
+
 if (!localStorage.getItem('drostex.modnote')) {
   $('mod-note').hidden = false;
   $('mod-note-x').addEventListener('click', () => {
@@ -666,6 +724,8 @@ async function poll() {
       return;
     }
 
+    renderCycle(s.cycle);
+
     if (s.renderer.running) {
       setTally('streaming', `streaming · ${s.renderer.animation}`);
       if (s.renderer.animation !== current) {
@@ -727,6 +787,7 @@ $('retry').addEventListener('click', () => { offlineStrikes = 0; poll(); });
 try {
   await loadAnimations();
   await renderPresets(await api('presets'));
+  renderCycle(await api('cycle'));
 } catch (e) {
   setOffline(true,
     e?.status === 404 ? 'Drostex needs restarting.' : 'Could not start.',
@@ -735,4 +796,13 @@ try {
       : `Failed to load: ${e.message}`);
 }
 await poll();
+// 2s is plenty for status, but the auto-cycle countdown reads badly at that
+// rate, so it ticks locally between polls.
 setInterval(poll, 2000);
+setInterval(() => {
+  // Only the seconds node, so the item name beside it survives.
+  const el = $('cycle-left');
+  if (!el) return;
+  const n = parseInt(el.textContent, 10);
+  if (Number.isFinite(n) && n > 0) el.textContent = `${n - 1}s`;
+}, 1000);

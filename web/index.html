@@ -41,6 +41,29 @@
     <input type="range" id="brightness" min="0" max="255" value="150">
   </div>
 
+  <div class="cycle" id="cycle-bar">
+    <label class="switch">
+      <input type="checkbox" id="cycle-on">
+      <span>Auto-cycle</span>
+    </label>
+    <span class="field">
+      <label for="cycle-pool">Through</label>
+      <select id="cycle-pool"></select>
+    </span>
+    <span class="field">
+      <label for="cycle-interval">Every <output id="cycle-interval-out">60s</output></label>
+      <input type="range" id="cycle-interval" min="5" max="600" step="5" value="60">
+    </span>
+    <span class="field">
+      <label for="cycle-order">Order</label>
+      <select id="cycle-order">
+        <option value="shuffle">Shuffle</option>
+        <option value="sequential">In order</option>
+      </select>
+    </span>
+    <span class="cycle-now" id="cycle-now"></span>
+  </div>
+
   <p class="mod-note" id="mod-note" hidden>
     Power and brightness apply to everything. Sparkle and symmetry appear twice
     &mdash; once for your looks, once for the built-in effects &mdash; because the

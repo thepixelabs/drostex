@@ -24,6 +24,7 @@ import { exec } from 'node:child_process';
 import { loadConfig } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
 import { ANIMATIONS, PALETTES, iq, SYMMETRY_NAMES } from '../src/animations.mjs';
+import { Cycler, POOLS } from '../src/cycler.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
@@ -31,6 +32,25 @@ const PORT = Number(process.env.PORT ?? 7847);
 
 const CONFIG = loadConfig();
 const renderer = new Renderer(CONFIG);
+
+/** Effects are static for a given firmware, so fetch the list once. */
+let effectsCache = null;
+async function listEffects() {
+  if (effectsCache) return effectsCache;
+  const all = await device('/json');
+  effectsCache = all.effects
+    .map((label, id) => ({ id, label, sound: isSoundReactive(id, label) }))
+    .filter((e) => e.label && e.label !== '-');
+  return effectsCache;
+}
+
+const cycler = new Cycler({
+  renderer,
+  device: (path, init) => device(path, init),
+  listPresets: () => loadPresets(),
+  listEffects,
+  animations: ANIMATIONS,
+});
 
 /**
  * A build stamp over the served assets, injected into the page and reported by
@@ -136,6 +156,7 @@ const server = http.createServer(async (req, res) => {
       const dstate = st.status === 'fulfilled' ? st.value : null;
       return json(res, 200, {
         renderer: renderer.status(),
+        cycle: cycler.status(),
         device: dev && {
           name: dev.name, product: dev.product, brand: dev.brand,
           live: dev.live, count: dev.leds?.count, power: dev.leds?.pwr,
@@ -157,6 +178,11 @@ const server = http.createServer(async (req, res) => {
         params: a.params ?? {},
         values: renderer.animParams[id],
       })));
+    }
+
+    if (p === '/api/cycle') {
+      if (req.method === 'POST') return json(res, 200, await cycler.set(await readBody(req)));
+      return json(res, 200, { ...cycler.status(), pools: POOLS });
     }
 
     if (p === '/api/palettes') {
@@ -251,6 +277,7 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/api/play' && req.method === 'POST') {
       const { name } = await readBody(req);
+      if (cycler.enabled) await cycler.set({ enabled: false });
       await renderer.play(name);
       return json(res, 200, renderer.status());
     }
@@ -270,6 +297,7 @@ const server = http.createServer(async (req, res) => {
         const body = await readBody(req);
         // Any onboard-effect change means we are no longer the pixel source.
         const seg = body.seg?.[0] ?? {};
+        if (seg.fx !== undefined && cycler.enabled) await cycler.set({ enabled: false });
         // Choosing an effect means the firmware is the pixel source now. Do not
         // blank first - that would flash black between the two sources.
         if (seg.fx !== undefined) await renderer.stop({ blank: false });
@@ -304,8 +332,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 200, {
         // The firmware pads its table with '-' placeholders; only real entries
         // are worth showing.
-        effects: all.effects.map((label, id) => ({ id, label, sound: isSoundReactive(id, label) }))
-          .filter((e) => e.label && e.label !== '-'),
+        effects: await listEffects(),
         palettes: all.palettes.map((label, id) => ({ id, label }))
           .filter((p2) => p2.label && p2.label !== '-'),
         state: all.state,
@@ -356,6 +383,7 @@ process.on('SIGINT', async () => {
   if (closing) process.exit(0);
   closing = true;
   console.log('\n  Stopping…');
+  cycler.stopTimer();
   await renderer.stop();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500);

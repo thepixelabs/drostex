@@ -350,3 +350,19 @@ input[type=search] { flex: 1; min-width: 160px; }
 
 
 .build { font: 10px var(--mono); color: var(--text-2); opacity: .7; }
+
+/* ── auto-cycle ──────────────────────────────────────────── */
+.cycle {
+  flex-basis: 100%;
+  display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
+  padding-top: 14px; margin-top: 4px;
+  border-top: 1px solid var(--hairline);
+}
+.cycle .field { min-width: 130px; }
+.cycle select { width: 100%; }
+.cycle input[type=range] { min-width: 130px; }
+.cycle-now {
+  font: 11px var(--mono); color: var(--text-2);
+  padding-bottom: 4px; margin-left: auto; white-space: nowrap;
+}
+.cycle-now b { color: var(--text-1); font-weight: 500; }

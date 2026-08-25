@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drostex</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%237C5CFC'/><rect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <span class="wordmark">Drostex</span>
+  </div>
+  <div class="tally" id="tally" data-state="idle">
+    <span class="dot" aria-hidden="true"></span>
+    <span id="tally-text">connecting…</span>
+  </div>
+</header>
+
+<main>
+  <nav class="tabs" role="tablist">
+    <button class="tab is-active" role="tab" aria-selected="true" data-tab="studio">Studio</button>
+    <button class="tab" role="tab" aria-selected="false" data-tab="onboard">Onboard effects</button>
+  </nav>
+
+  <!-- ── Studio ───────────────────────────────────────────── -->
+  <section id="panel-studio" class="panel is-active" role="tabpanel">
+    <div class="grid" id="animations" aria-label="Animations"></div>
+
+    <div class="controls">
+      <div class="control">
+        <label for="brightness">Brightness <output id="brightness-out">85%</output></label>
+        <input type="range" id="brightness" min="0" max="100" value="85">
+      </div>
+      <div class="control">
+        <label for="speed">Speed <output id="speed-out">1.0×</output></label>
+        <input type="range" id="speed" min="10" max="300" value="100">
+      </div>
+      <div class="control">
+        <label for="fps">Frame rate <output id="fps-out">40 fps</output></label>
+        <input type="range" id="fps" min="10" max="60" value="40">
+      </div>
+      <button class="btn btn-stop" id="stop">Stop &amp; release</button>
+    </div>
+    <p class="hint">
+      Stopping hands the cube back to its own firmware after about 2&nbsp;seconds.
+      Animations keep running if you close this tab &mdash; the pixels are computed
+      by the local process, not the page.
+    </p>
+  </section>
+
+  <!-- ── Onboard ──────────────────────────────────────────── -->
+  <section id="panel-onboard" class="panel" role="tabpanel">
+    <p class="hint">
+      These run on the cube itself, so they survive closing Drostex entirely.
+      Picking one stops the live stream &mdash; only one source can drive the LEDs.
+    </p>
+    <div class="row">
+      <label for="palette">Palette</label>
+      <select id="palette"></select>
+    </div>
+    <div class="grid grid-dense" id="effects" aria-label="Built-in effects"></div>
+  </section>
+</main>
+
+<footer class="statusbar">
+  <span id="device-name">—</span>
+  <span class="sep">·</span>
+  <span id="device-pixels">—</span>
+  <span class="sep">·</span>
+  <span id="device-power">—</span>
+</footer>
+
+<script src="/app.js" type="module"></script>
+</body>
+</html>

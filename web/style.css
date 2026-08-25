@@ -1,0 +1,179 @@
+/* Tokens. Cool-violet-biased neutrals: a warm grey UI fights a glowing object.
+   Elevation is expressed as glow rather than shadow, which is what reads as
+   depth on a near-black surface. */
+:root {
+  --bg-void: #0A0B0F;
+  --bg-surface: #14161D;
+  --bg-raised: #1D2029;
+  --hairline: #2A2E3A;
+  --text-1: #ECEDF2;
+  --text-2: #9498AC;
+  --text-3: #5C6178;
+  --accent: #7C5CFC;
+  --accent-dim: #5B3FE0;
+  --stream: #FF2D55;
+  --ok: #33D6A6;
+  --warn: #FFB020;
+  --radius: 8px;
+  --radius-sm: 4px;
+  --dur: 160ms;
+  --ease: cubic-bezier(.2, 0, 0, 1);
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg-void);
+  color: var(--text-1);
+  font: 15px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── top bar ─────────────────────────────────────────────── */
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--hairline);
+  background: var(--bg-surface);
+}
+.brand { display: flex; align-items: center; gap: 10px; }
+.mark {
+  width: 16px; height: 16px; border-radius: 3px;
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 12px rgba(124, 92, 252, .55);
+}
+.wordmark { font-weight: 600; letter-spacing: .01em; }
+
+.tally {
+  display: flex; align-items: center; gap: 8px;
+  font: 12px/1 var(--mono);
+  color: var(--text-2);
+  padding: 6px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 100px;
+}
+.tally .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.tally[data-state="streaming"] { color: var(--stream); border-color: rgba(255, 45, 85, .45); }
+.tally[data-state="streaming"] .dot { background: var(--stream); animation: pulse 1.6s var(--ease) infinite; }
+.tally[data-state="onboard"] { color: var(--ok); border-color: rgba(51, 214, 166, .4); }
+.tally[data-state="onboard"] .dot { background: var(--ok); }
+.tally[data-state="offline"] { color: var(--warn); border-color: rgba(255, 176, 32, .4); }
+.tally[data-state="offline"] .dot { background: var(--warn); }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* ── layout ──────────────────────────────────────────────── */
+main { flex: 1; padding: 20px; max-width: 900px; width: 100%; margin: 0 auto; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline); }
+.tab {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--text-2); font: inherit; padding: 10px 14px; cursor: pointer;
+  transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.tab:hover { color: var(--text-1); }
+.tab.is-active { color: var(--text-1); border-bottom-color: var(--accent); }
+
+.panel { display: none; }
+.panel.is-active { display: block; }
+
+/* ── animation cards ─────────────────────────────────────── */
+.grid {
+  display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  margin-bottom: 24px;
+}
+.grid-dense { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+
+.card {
+  text-align: left; cursor: pointer;
+  background: var(--bg-surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  color: var(--text-1); font: inherit;
+  transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.card:hover { border-color: var(--accent-dim); background: var(--bg-raised); }
+.card:active { transform: translateY(1px); }
+.card.is-active {
+  border-color: var(--accent);
+  background: var(--bg-raised);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 20px rgba(124, 92, 252, .22);
+}
+.card .name { font-weight: 600; display: block; }
+.card .desc { color: var(--text-2); font-size: 13px; display: block; margin-top: 3px; }
+.card.compact .name { font-size: 13px; font-weight: 500; }
+
+/* ── controls ────────────────────────────────────────────── */
+.controls {
+  background: var(--bg-surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  display: grid; gap: 16px;
+}
+.control label {
+  display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; color: var(--text-2); margin-bottom: 7px;
+}
+.control output { font: 12px var(--mono); color: var(--text-1); }
+
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 3px; border-radius: 2px;
+  background: var(--hairline); outline: none;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: var(--accent); cursor: pointer;
+  box-shadow: 0 0 10px rgba(124, 92, 252, .55);
+  transition: transform var(--dur) var(--ease);
+}
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.18); }
+input[type=range]::-moz-range-thumb {
+  width: 15px; height: 15px; border: 0; border-radius: 50%;
+  background: var(--accent); cursor: pointer;
+}
+
+.btn {
+  font: inherit; padding: 9px 16px; border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline); background: var(--bg-raised);
+  color: var(--text-1); cursor: pointer; justify-self: start;
+  transition: border-color var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.btn:hover { border-color: var(--stream); color: var(--stream); }
+
+.row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.row label { font-size: 13px; color: var(--text-2); }
+select {
+  font: inherit; background: var(--bg-raised); color: var(--text-1);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+  padding: 7px 10px; cursor: pointer;
+}
+
+.hint { color: var(--text-3); font-size: 13px; margin: 14px 0 20px; max-width: 62ch; }
+
+/* ── status bar ──────────────────────────────────────────── */
+.statusbar {
+  border-top: 1px solid var(--hairline);
+  background: var(--bg-surface);
+  padding: 9px 20px;
+  font: 12px var(--mono); color: var(--text-3);
+  display: flex; gap: 9px;
+}
+.sep { opacity: .45; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--radius-sm); }
+
+/* The whole point of this app is motion, so reduced-motion stops the UI's own
+   animation without touching what the cube is doing. */
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}

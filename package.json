@@ -1,0 +1,15 @@
+{
+  "name": "drostex",
+  "version": "0.1.0",
+  "description": "A live studio for WLED-based LED art objects, built for the HyperCube Nano",
+  "type": "module",
+  "license": "MIT",
+  "engines": { "node": ">=20" },
+  "bin": { "drostex": "server/index.mjs" },
+  "scripts": {
+    "start": "node server/index.mjs",
+    "play": "node scripts/play.mjs"
+  },
+  "keywords": ["wled", "led", "sacn", "e1.31", "ddp", "hypercube", "infinity-mirror"],
+  "files": ["src", "server", "web", "config.example.json"]
+}

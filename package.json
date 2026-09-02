@@ -4,12 +4,22 @@
   "description": "A live studio for WLED-based LED art objects, built for the HyperCube Nano",
   "type": "module",
   "license": "MIT",
+  "author": "PixeLabs (https://github.com/thepixelabs)",
+  "homepage": "https://drostex.pixelabs.net",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thepixelabs/drostex.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thepixelabs/drostex/issues"
+  },
   "engines": { "node": ">=20" },
   "bin": { "drostex": "server/index.mjs" },
   "scripts": {
     "start": "node server/index.mjs",
-    "play": "node scripts/play.mjs"
+    "play": "node scripts/play.mjs",
+    "test": "node --test"
   },
   "keywords": ["wled", "led", "sacn", "e1.31", "ddp", "hypercube", "infinity-mirror"],
-  "files": ["src", "server", "web", "config.example.json"]
+  "files": ["src", "server", "scripts", "web", "config.example.json"]
 }

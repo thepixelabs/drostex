@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Drostex is a local studio for the WLED-based HyperCube Nano LED cube. It takes the pixels off the firmware and streams your own animations to it at 40fps. Zero dependencies, runs on your machine, nothing leaves your LAN.">
+<meta name="author" content="The Pixel Labs">
+<meta name="color-scheme" content="dark light">
+
+<link rel="canonical" href="https://drostex.pixelabs.net/">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://drostex.pixelabs.net/">
+<meta property="og:site_name" content="Drostex">
+<meta property="og:title" content="Drostex: write the 96th effect for a WLED HyperCube Nano">
+<meta property="og:description" content="Your LED cube shipped with 95 effects and no way to write the 96th. Drostex streams your own animations to it at 40fps. Write one as a pure function; the UI grows the knobs by itself.">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:site" content="@thepixelabs">
+<meta name="twitter:title" content="Drostex: write the 96th effect for a WLED HyperCube Nano">
+<meta name="twitter:description" content="Your LED cube shipped with 95 effects and no way to write the 96th. Drostex streams your own animations to it at 40fps.">
+
+<title>Drostex: write the 96th effect for a WLED HyperCube Nano</title>
+
+<!-- Fonts are self-hosted and the body face is the system stack, so this page
+     makes no third-party requests at all. It asserts that nothing leaves your
+     LAN, which would sit badly inside a font request to someone else's CDN. -->
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Drostex",
+  "description": "A local web studio for WLED-based LED art objects. Streams computed pixels over UDP to a HyperCube Nano at 40fps, and drives the firmware's own effects over its JSON API.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "macOS, Linux, Windows",
+  "url": "https://drostex.pixelabs.net/",
+  "installUrl": "https://github.com/thepixelabs/drostex",
+  "license": "https://github.com/thepixelabs/drostex/blob/main/LICENSE",
+  "author": { "@type": "Organization", "name": "The Pixel Labs", "url": "https://pixelabs.net" },
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+
+<style>
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono-400.woff2') format('woff2');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/jetbrains-mono-700.woff2') format('woff2');
+  font-weight: 700; font-style: normal; font-display: swap;
+}
+
+/* ============================================================
+   TOKENS
+   ============================================================ */
+:root {
+  --bg:          #08090f;
+  --bg-elev:     #10131c;
+  --bg-sunk:     #05060a;
+  --border:      #232838;
+  --border-soft: #191d29;
+  --text:        #e8edf7;
+  --muted:       #8b94ad;
+  --dim:         #5d657c;
+
+  --accent:      #7b6ef6;
+  --accent-soft: #a79dff;
+  --cyan:        #22d3ee;
+  --magenta:     #f472b6;
+  --amber:       #fbbf24;
+  --green:       #34d399;
+
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, Menlo, monospace;
+
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
+  --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px;
+
+  --r-sm: 6px; --r-md: 10px; --r-lg: 16px;
+  --wrap: 1120px;
+}
+
+[data-theme="light"] {
+  --bg:          #f6f7fb;
+  --bg-elev:     #ffffff;
+  --bg-sunk:     #eceef6;
+  --border:      #d9dde9;
+  --border-soft: #e6e9f2;
+  --text:        #171a24;
+  --muted:       #5b6479;
+  --dim:         #858da3;
+  --accent:      #5b4ee0;
+  --accent-soft: #4a3dd4;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent-soft); text-decoration: none; }
+a:hover { text-decoration: underline; }
+/* :not(.btn) because buttons set their own colour. An element+attribute
+   selector outranks the .btn--* class, so without this it repaints the
+   label the same violet as its own background. */
+[data-theme="light"] a:not(.btn) { color: var(--accent); }
+code, pre, kbd { font-family: var(--font-mono); }
+
+.wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 var(--s5); }
+
+/* ============================================================
+   NAV
+   ============================================================ */
+.nav {
+  position: sticky; top: 0; z-index: 50;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border-soft);
+}
+.nav__inner {
+  display: flex; align-items: center; gap: var(--s5);
+  height: 60px; max-width: var(--wrap); margin: 0 auto; padding: 0 var(--s5);
+}
+.brand {
+  display: flex; align-items: center; gap: var(--s3);
+  font-weight: 700; letter-spacing: -0.02em; font-size: 17px;
+  color: var(--text); text-decoration: none;
+}
+.brand:hover { text-decoration: none; }
+.brand__dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--cyan);
+  box-shadow: 0 0 10px var(--cyan), 0 0 22px color-mix(in srgb, var(--cyan) 60%, transparent);
+  animation: brandpulse 3.2s ease-in-out infinite;
+}
+@keyframes brandpulse {
+  0%, 100% { background: var(--cyan);    box-shadow: 0 0 10px var(--cyan), 0 0 22px color-mix(in srgb, var(--cyan) 55%, transparent); }
+  50%      { background: var(--magenta); box-shadow: 0 0 10px var(--magenta), 0 0 22px color-mix(in srgb, var(--magenta) 55%, transparent); }
+}
+.nav__links { margin-left: auto; display: flex; align-items: center; gap: var(--s5); }
+.nav__links a { color: var(--muted); font-size: 14px; }
+.nav__links a:hover { color: var(--text); text-decoration: none; }
+.icon-btn {
+  display: grid; place-items: center;
+  width: 32px; height: 32px; padding: 0;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  cursor: pointer; font-size: 14px; line-height: 1;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--dim); }
+@media (max-width: 720px) { .nav__links .hide-sm { display: none; } }
+
+/* ============================================================
+   BUTTONS
+   ============================================================ */
+.btn {
+  display: inline-flex; align-items: center; gap: var(--s2);
+  padding: 11px 20px; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600; font-family: var(--font-mono);
+  border: 1px solid transparent; cursor: pointer; text-decoration: none;
+  transition: transform .12s ease, background .15s ease, border-color .15s ease;
+}
+.btn:hover { text-decoration: none; transform: translateY(-1px); }
+.btn--primary { background: var(--accent); color: #fff; }
+.btn--primary:hover { background: var(--accent-soft); }
+[data-theme="light"] .btn--primary:hover { background: var(--accent-soft); color: #fff; }
+.btn--ghost { background: transparent; color: var(--text); border-color: var(--border); }
+.btn--ghost:hover { border-color: var(--dim); background: var(--bg-elev); }
+
+/* ============================================================
+   HERO
+   ============================================================ */
+.hero { padding: var(--s9) 0 var(--s8); overflow: hidden; }
+.hero__grid {
+  display: grid; grid-template-columns: 1.05fr 0.95fr;
+  gap: var(--s8); align-items: center;
+}
+.eyebrow {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--dim); margin: 0 0 var(--s4);
+}
+.hero h1 {
+  margin: 0 0 var(--s5);
+  font-size: clamp(38px, 5.4vw, 62px);
+  line-height: 1.04; letter-spacing: -0.035em; font-weight: 700;
+}
+.hero h1 em {
+  font-style: normal;
+  background: linear-gradient(100deg, var(--cyan), var(--accent-soft) 55%, var(--magenta));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero__lede { font-size: 18px; color: var(--muted); margin: 0 0 var(--s6); max-width: 46ch; }
+.hero__lede strong { color: var(--text); font-weight: 600; }
+.hero__cta { display: flex; flex-wrap: wrap; gap: var(--s3); margin-bottom: var(--s6); }
+.hero__facts {
+  display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5);
+  font-family: var(--font-mono); font-size: 12.5px; color: var(--dim);
+}
+.hero__facts span::before { content: '· '; color: var(--border); }
+.hero__facts span:first-child::before { content: ''; }
+
+/* --- cube stage ---
+   Deliberately dark-locked in both themes. This is a light object: an
+   unlit room is the honest backdrop, and the LEDs have nothing to read
+   against on a pale one. Every colour here is literal, not a token. */
+.stage {
+  position: relative;
+  background:
+    radial-gradient(ellipse 68% 55% at 50% 44%, #141a30 0%, #0a0c15 55%, #05060a 100%);
+  border: 1px solid #262c3e; border-radius: var(--r-lg);
+  padding: var(--s4) var(--s4) var(--s3);
+  box-shadow: 0 30px 80px -40px #000, inset 0 1px 0 rgba(255,255,255,.04);
+}
+.stage__canvas { display: block; width: 100%; height: auto; border-radius: var(--r-md); }
+.stage__bar {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: var(--s2); margin-top: var(--s3);
+}
+.chip {
+  padding: 5px 11px; border-radius: 999px;
+  background: transparent; color: #8b94ad;
+  border: 1px solid #262c3e;
+  font-family: var(--font-mono); font-size: 11.5px;
+  cursor: pointer; transition: all .14s ease;
+}
+.chip:hover { color: #e8edf7; border-color: #5d657c; }
+.chip[aria-pressed="true"] {
+  color: #08090f; background: #e8edf7; border-color: #e8edf7; font-weight: 500;
+}
+.stage__note {
+  margin: var(--s3) 0 0; padding-top: var(--s3);
+  border-top: 1px solid #1b2030;
+  font-family: var(--font-mono); font-size: 11.5px; color: #6b7490; line-height: 1.55;
+}
+
+@media (max-width: 900px) {
+  .hero { padding: var(--s7) 0 var(--s6); }
+  .hero__grid { grid-template-columns: 1fr; gap: var(--s6); }
+  .stage { order: -1; }
+}
+
+/* ============================================================
+   SECTIONS
+   ============================================================ */
+section { padding: var(--s8) 0; }
+.section-label {
+  font-family: var(--font-mono); font-size: 12px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--dim); margin: 0 0 var(--s3);
+}
+h2 {
+  font-size: clamp(26px, 3.2vw, 34px); line-height: 1.18;
+  letter-spacing: -0.025em; margin: 0 0 var(--s4); font-weight: 700;
+}
+.section-desc { color: var(--muted); font-size: 17px; max-width: 62ch; margin: 0 0 var(--s6); }
+.divider { border: 0; border-top: 1px solid var(--border-soft); margin: 0; }
+
+/* --- two-source split --- */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s5); }
+.source {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: var(--s5);
+}
+.source__tag {
+  display: inline-block; margin-bottom: var(--s3); padding: 3px 9px;
+  border-radius: 999px; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: .04em;
+}
+.source--ours .source__tag { color: var(--cyan);    background: color-mix(in srgb, var(--cyan) 14%, transparent); }
+.source--theirs .source__tag { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.source h3 { margin: 0 0 var(--s2); font-size: 19px; letter-spacing: -0.01em; }
+.source p { margin: 0 0 var(--s3); color: var(--muted); font-size: 15px; }
+.source ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14.5px; }
+.source li { margin-bottom: 4px; }
+.source li::marker { color: var(--dim); }
+.handover {
+  margin-top: var(--s5); padding: var(--s4) var(--s5);
+  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  color: var(--muted); font-size: 15px;
+}
+.handover strong { color: var(--text); }
+@media (max-width: 760px) { .split { grid-template-columns: 1fr; } }
+
+/* --- code --- */
+pre {
+  margin: 0; padding: var(--s5); overflow-x: auto;
+  background: var(--bg-sunk); border: 1px solid var(--border);
+  border-radius: var(--r-md); font-size: 13px; line-height: 1.7;
+}
+[data-theme="light"] pre { background: #12141d; color: #e8edf7; border-color: #2a2f40; }
+.tok-c { color: var(--dim); font-style: italic; }
+.tok-k { color: var(--magenta); }
+.tok-s { color: var(--green); }
+.tok-f { color: var(--cyan); }
+.tok-n { color: var(--amber); }
+[data-theme="light"] .tok-c { color: #7d859c; }
+
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--s5); }
+.step__n {
+  font-family: var(--font-mono); font-size: 12px; color: var(--accent-soft);
+  margin-bottom: var(--s2);
+}
+[data-theme="light"] .step__n { color: var(--accent); }
+.step h3 { margin: 0 0 var(--s2); font-size: 16px; }
+.step p { margin: 0 0 var(--s3); color: var(--muted); font-size: 14.5px; }
+.step pre { padding: var(--s3) var(--s4); font-size: 12.5px; }
+@media (max-width: 820px) { .steps { grid-template-columns: 1fr; } }
+
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s7); align-items: start; }
+@media (max-width: 880px) { .two-col { grid-template-columns: 1fr; gap: var(--s6); } }
+
+/* --- measured numbers --- */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s4); margin-bottom: var(--s6); }
+.stat {
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: var(--s4) var(--s5);
+}
+.stat__v {
+  font-family: var(--font-mono); font-size: 27px; font-weight: 500;
+  letter-spacing: -0.02em; color: var(--cyan); line-height: 1.2;
+}
+.stat__l { font-size: 13px; color: var(--muted); margin-top: 2px; }
+@media (max-width: 820px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* --- limits --- */
+.limits { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border-soft); border-radius: var(--r-md); overflow: hidden; }
+.limits li { background: var(--bg); padding: var(--s4) var(--s5); display: grid; grid-template-columns: 150px 1fr; gap: var(--s5); align-items: baseline; }
+.limits b { font-family: var(--font-mono); font-size: 12.5px; font-weight: 500; color: var(--amber); letter-spacing: .02em; }
+.limits span { color: var(--muted); font-size: 15px; }
+@media (max-width: 700px) { .limits li { grid-template-columns: 1fr; gap: var(--s1); } }
+
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.footer { border-top: 1px solid var(--border-soft); padding: var(--s6) 0; }
+.footer__inner { display: flex; flex-wrap: wrap; gap: var(--s4) var(--s5); align-items: center; }
+.footer__brand { display: flex; align-items: center; gap: var(--s3); font-size: 14px; color: var(--muted); }
+.footer__links { margin-left: auto; display: flex; flex-wrap: wrap; gap: var(--s5); list-style: none; margin-bottom: 0; padding: 0; }
+.footer__links a { color: var(--muted); font-size: 14px; }
+.footer__links a:hover { color: var(--text); text-decoration: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .brand__dot { animation: none; }
+  .btn:hover { transform: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav__inner">
+    <a class="brand" href="/"><span class="brand__dot" aria-hidden="true"></span>Drostex</a>
+    <nav class="nav__links" aria-label="Site navigation">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#start">Quick start</a>
+      <a class="hide-sm" href="#limits">Limits</a>
+      <a href="https://github.com/thepixelabs/drostex" target="_blank" rel="noopener noreferrer">GitHub</a>
+      <button class="icon-btn" id="theme" type="button" aria-label="Switch to light theme" title="Switch theme">◐</button>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ===================== HERO ===================== -->
+<section class="hero">
+  <div class="wrap hero__grid">
+    <div>
+      <p class="eyebrow">LED art object studio</p>
+      <h1>Write the <em>96th</em> effect.</h1>
+      <p class="hero__lede">
+        Your cube shipped with 95 effects burned into its firmware and no way
+        to add one. Drostex streams <strong>your own</strong> animations to it
+        at 40&nbsp;fps. You write one as a pure function. The UI reads the
+        parameters you declared and builds the knobs for them.
+      </p>
+      <div class="hero__cta">
+        <a class="btn btn--primary" href="#start">./own the pixels</a>
+        <a class="btn btn--ghost" href="https://github.com/thepixelabs/drostex" target="_blank" rel="noopener noreferrer">View source</a>
+      </div>
+      <p class="hero__facts">
+        <span>0 runtime dependencies</span><span>Finds your cube automatically</span><span>Node ≥ 20</span><span>MIT</span><span>Nothing leaves your LAN</span>
+      </p>
+    </div>
+
+    <div class="stage">
+      <canvas class="stage__canvas" id="cube" width="1000" height="820"
+              role="img"
+              aria-label="Animated wireframe of a cube standing on one corner, its twelve edges lit by 132 simulated LEDs."></canvas>
+      <div class="stage__bar" role="group" aria-label="Preview pattern">
+        <button class="chip" type="button" data-anim="aurora"  aria-pressed="true">aurora</button>
+        <button class="chip" type="button" data-anim="comet"   aria-pressed="false">comet</button>
+        <button class="chip" type="button" data-anim="rainbow" aria-pressed="false">rainbow</button>
+        <button class="chip" type="button" data-anim="pulse"   aria-pressed="false">pulse</button>
+        <button class="chip" type="button" data-anim="fire"    aria-pressed="false">fire</button>
+      </div>
+      <p class="stage__note">
+        Five of the animation functions, ported to canvas and run over the
+        measured address layout. The four blocks drive 1, 2, 4 and 5 edges, so
+        edges move together in groups. Which edge sits in which block was never
+        confirmed, so the layout here is nominal.
+      </p>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ===================== MEASURED ===================== -->
+<section id="measured">
+  <div class="wrap">
+    <p class="section-label">&gt; field notes</p>
+    <h2>Nobody documented this cube, so we measured it.</h2>
+    <p class="section-desc">
+      The spec sheet says 132 LEDs. The controller reports 88 addresses, and only
+      44 of them drive anything. Everything else here came from lighting things up
+      and looking at them, including one number we got wrong first: 132 over 44
+      is 3, so we assumed 3 LEDs per address. The cube disagreed. It is
+      branching-parallel, the fan-out is uneven, and the blocks drive 1, 2, 4 and
+      5 edges. The scripts that found that ship in <code>scripts/</code>, so you
+      can re-run them on your own unit instead of trusting ours.
+    </p>
+
+    <div class="stats">
+      <div class="stat"><div class="stat__v">88 → 44</div><div class="stat__l">addresses reported vs. actually wired</div></div>
+      <div class="stat"><div class="stat__v">1, 2, 4, 5</div><div class="stat__l">edges each address block drives</div></div>
+      <div class="stat"><div class="stat__v">12 × 11</div><div class="stat__l">edges by LEDs, the one vendor figure that held</div></div>
+      <div class="stat"><div class="stat__v">2 / 4</div><div class="stat__l">transports that work, of four tried</div></div>
+    </div>
+
+    <div class="split">
+      <div class="source">
+        <h3 style="color: var(--muted); font-size: 15px; font-family: var(--font-mono); font-weight: 500;">What answered</h3>
+        <ul>
+          <li>WLED DRGB on UDP 21324: the one we stream on</li>
+          <li>sACN / E1.31 on universe 1, port 5568</li>
+          <li>The JSON HTTP API, for control-plane calls</li>
+        </ul>
+      </div>
+      <div class="source">
+        <h3 style="color: var(--muted); font-size: 15px; font-family: var(--font-mono); font-weight: 500;">What did not</h3>
+        <ul>
+          <li>DDP and Art-Net: ports closed on this firmware</li>
+          <li><code>/json/fxdata</code>: answers 501, so effect metadata is inferred</li>
+          <li>Addresses 44 to 87: configured, but no physical tap exists</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ===================== HOW IT WORKS ===================== -->
+<section id="how">
+  <div class="wrap">
+    <p class="section-label">&gt; architecture</p>
+    <h2>Two things can drive the cube. Never both.</h2>
+    <p class="section-desc">
+      A browser cannot open a raw UDP socket, so a small Node server holds the
+      socket and does the pixel maths instead. The page only ever sends
+      control messages over HTTP. Close the tab and the animation keeps
+      running.
+    </p>
+
+    <div class="split">
+      <div class="source source--ours">
+        <span class="source__tag">source A: yours</span>
+        <h3>Streamed looks</h3>
+        <p>Computed in Node, pushed over WLED DRGB on UDP&nbsp;21324 at up to 60&nbsp;fps.</p>
+        <ul>
+          <li>11 built-in patterns, plus a Custom node you assemble yourself</li>
+          <li>Per-pattern parameters, saved independently as you switch around</li>
+          <li>Gamma applied after brightness, so dimming stays perceptually even</li>
+          <li>Drift-corrected frame clock, so timer jitter cannot accumulate</li>
+        </ul>
+      </div>
+      <div class="source source--theirs">
+        <span class="source__tag">source B: the firmware's</span>
+        <h3>Built-in effects</h3>
+        <p>The cube's own ~95 effects and 3 rotating playlists, driven over its JSON HTTP API.</p>
+        <ul>
+          <li>Star the ones you like; filter to sound-reactive or static</li>
+          <li>25 of the firmware's 27 palettes, with hand-authored swatches so you can pick by eye</li>
+          <li>Symmetry, speed, intensity and palette each show whether you or the pattern currently owns them</li>
+          <li>Warp drive, the one-shot animation baked into the firmware</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="handover">
+      <strong>The handover only runs one way.</strong> Realtime pixels override
+      whatever the firmware draws the instant they arrive, so starting a look
+      needs no handshake: the stream simply wins. Picking an effect is the
+      direction that needs care, because the reverse isn't true. Drostex
+      releases the socket first, without blanking it, so the handoff doesn't
+      flash black between the two sources. Auto-cycle follows the same rule
+      mid-rotation.
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ===================== QUICK START ===================== -->
+<section id="start">
+  <div class="wrap">
+    <p class="section-label">&gt; quick start</p>
+    <h2>Two commands, no build step.</h2>
+    <p class="section-desc">
+      There are no runtime dependencies. Everything it needs ships with Node.
+      Nothing to install, no native module to compile. That is the difference
+      between "clone and run" and "clone and debug node-gyp".
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <p class="step__n">01</p>
+        <h3>Get it</h3>
+        <p>Needs Node 20 or newer. That is the only prerequisite.</p>
+<pre><code><span class="tok-f">git</span> clone https://github.com/thepixelabs/drostex
+<span class="tok-f">cd</span> drostex</code></pre>
+      </div>
+      <div class="step">
+        <p class="step__n">02</p>
+        <h3>Run it</h3>
+        <p>Opens your browser. No cube configured yet? It looks for one on the network automatically.</p>
+<pre><code><span class="tok-f">npm</span> start
+<span class="tok-c"># http://127.0.0.1:7847</span></code></pre>
+      </div>
+      <div class="step">
+        <p class="step__n">optional</p>
+        <h3>Point it at a specific cube</h3>
+        <p>Only if automatic discovery finds nothing, or finds the wrong device.</p>
+<pre><code><span class="tok-f">cp</span> config.example.json config.json
+<span class="tok-c"># "host": "192.168.1.50"</span></code></pre>
+      </div>
+    </div>
+
+    <p class="section-desc" style="margin-top: var(--s5); margin-bottom: 0;">
+      What day one looks like: click a pattern and it is already running on
+      the cube before you let go of the mouse. Hit Shuffle until something
+      surprises you. Save it. Turn on Auto-cycle and walk away: it keeps
+      working through your saved looks and the firmware's own effects with
+      nobody at the keyboard.
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ===================== WRITE ONE ===================== -->
+<section id="write">
+  <div class="wrap two-col">
+    <div>
+      <p class="section-label">&gt; extending it</p>
+      <h2>An animation is one pure function.</h2>
+      <p class="section-desc" style="margin-bottom: var(--s4);">
+        Take a context, return <code>[r, g, b]</code> in 0..1. Declare the
+        parameters you want exposed, and the UI builds its controls from those
+        declarations. Adding a knob is a one-line change that needs no UI
+        work at all.
+      </p>
+      <p style="color: var(--muted); font-size: 15px; margin: 0 0 var(--s4);">
+        Two coordinates, and the difference matters. <code>u</code> runs
+        <code>i/(N-1)</code> and hits both endpoints exactly. <code>uw</code> runs
+        <code>i/N</code> and wraps. The strip is a <em>closed loop</em> whose ends
+        meet at the corner the cube stands on, so a hue ramp built on
+        <code>u</code> puts a visible colour break right there. That was a real
+        bug report, and it is why both exist.
+      </p>
+      <p style="color: var(--muted); font-size: 15px; margin: 0;">
+        Drop it into <code>src/animations.mjs</code>. It shows up in the UI, in
+        the CLI player, in auto-cycle and as a savable look. No registration step.
+      </p>
+    </div>
+    <div>
+<pre><code><span class="tok-c">// src/animations.mjs</span>
+rainbow: {
+  label: <span class="tok-s">'Rainbow'</span>,
+  desc: <span class="tok-s">'a hue cycle travelling around the loop'</span>,
+
+  <span class="tok-c">// Each entry becomes a labelled control.</span>
+  params: {
+    cycles:     num(<span class="tok-s">'Cycles'</span>, <span class="tok-n">1</span>, <span class="tok-n">1</span>, <span class="tok-n">4</span>, <span class="tok-n">1</span>),
+    saturation: num(<span class="tok-s">'Saturation'</span>, <span class="tok-n">0.95</span>, <span class="tok-n">0</span>, <span class="tok-n">1</span>),
+    drift:      num(<span class="tok-s">'Drift'</span>, <span class="tok-n">0.15</span>, <span class="tok-n">-1</span>, <span class="tok-n">1</span>),
+  },
+
+  <span class="tok-c">// uw wraps, so the loop closes with no seam.</span>
+  fn: ({ uw, t, speed, p }) =&gt;
+    <span class="tok-f">hsv</span>(uw * p.cycles + t * p.drift * speed,
+        p.saturation, <span class="tok-n">1</span>),
+},</code></pre>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ===================== LIMITS ===================== -->
+<section id="limits">
+  <div class="wrap">
+    <p class="section-label">&gt; the honest part</p>
+    <h2>What it does not do.</h2>
+    <p class="section-desc">
+      Built for one cube on one desk, and never tested on another. Everything
+      below is where that shows. Read it before you clone.
+    </p>
+
+    <h3 style="color: var(--muted); font-size: 15px; font-family: var(--font-mono); font-weight: 500;">Where this works</h3>
+    <ul class="limits">
+      <li><b>proven</b><span>HyperCube Nano, firmware <code>hs-2.0</code>. Tested on one unit.</span></li>
+      <li><b>plausible, untested</b><span>Streamed looks on any WLED device that accepts DRGB on port 21324. Run <code>scripts/blink.mjs</code> against it first.</span></li>
+      <li><b>will not work</b><span>The built-in-effects tab, on stock WLED. Verify it yourself: <code>MODE_RANGES</code> and <code>isSoundReactive</code> in <code>server/index.mjs</code> are index ranges read off this firmware's own effect list, and <code>warp</code>, segment <code>sym</code>, and the three-step <code>sparkle</code> are vendor extensions plain WLED does not ship.</span></li>
+    </ul>
+
+    <h3 style="color: var(--muted); font-size: 15px; font-family: var(--font-mono); font-weight: 500; margin-top: var(--s6);">Scope</h3>
+    <ul class="limits">
+      <li><b>one product</b><span>Built and tested against a HyperCube Nano on firmware <code>hs-2.0</code>, the build that reports the 95 effects counted above. See "Where this works" for other WLED gear.</span></li>
+      <li><b>one device</b><span>One cube per server. No multi-device sync, no grouping.</span></li>
+      <li><b>no auth</b><span>Binds to 127.0.0.1 and rejects non-loopback Host headers. That is a guard, not a security model. Do not expose it.</span></li>
+      <li><b>no multi-user</b><span>Two tabs against the same server will fight. There is no locking, and the 2-second poll means the second tab silently follows whatever the first one just set.</span></li>
+      <li><b>not packaged</b><span>Node, a terminal, and a process you leave running. No installer, no system service, no start-on-boot. Close the laptop and the animation stops the moment it sleeps.</span></li>
+      <li><b>no audio</b><span>Sound-reactive effects use the microphone on the cube itself. Drostex sends no audio, and those effects look broken in a silent room.</span></li>
+    </ul>
+
+    <h3 style="color: var(--muted); font-size: 15px; font-family: var(--font-mono); font-weight: 500; margin-top: var(--s6);">Rough edges</h3>
+    <ul class="limits">
+      <li><b>approximate swatches</b><span>The device publishes palette <em>names</em> and nothing else. 25 of the firmware's 27 palettes get hand-authored swatches, to answer "which is the blue one", not to predict output.</span></li>
+      <li><b>255 is never trusted</b><span>Your device brightness is restored on a clean stop, but a reading of exactly 255 is refused rather than adopted as your preference, since that is what streaming itself leaves behind. Killed mid-stream, the cube is left at 255 until the next clean stop.</span></li>
+      <li><b>no hot reload</b><span>Edit <code>src/animations.mjs</code>, restart the server.</span></li>
+      <li><b>preview edge layout is nominal</b><span>The live cube preview shows the right groupings (1, 2, 4 and 5 edges per address block) but not which physical edge is which within them. That mapping is still open.</span></li>
+    </ul>
+  </div>
+</section>
+
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer__inner">
+    <div class="footer__brand">
+      <span class="brand__dot" aria-hidden="true"></span>
+      <strong style="color: var(--text);">Drostex</strong>
+      <span>© 2026 PixeLabs</span>
+      <span>Named for the Droste effect: the recursive picture that contains itself, which is what an infinity mirror does with light.</span>
+    </div>
+    <ul class="footer__links">
+      <li><a href="https://github.com/thepixelabs/drostex" target="_blank" rel="noopener noreferrer">GitHub</a></li>
+      <li><a href="https://github.com/thepixelabs/drostex/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">MIT</a></li>
+      <li><a href="https://pixelabs.net">PixeLabs</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+/* ==============================================================
+   THEME
+   ============================================================== */
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('theme');
+  var stored = null;
+  try { stored = localStorage.getItem('drostex-theme'); } catch (e) { /* private mode */ }
+  if (!stored && window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    stored = 'light';
+  }
+  if (stored) root.setAttribute('data-theme', stored);
+
+  function label() {
+    var dark = root.getAttribute('data-theme') !== 'light';
+    btn.setAttribute('aria-label', 'Switch to ' + (dark ? 'light' : 'dark') + ' theme');
+  }
+  label();
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('drostex-theme', next); } catch (e) { /* ignore */ }
+    label();
+  });
+})();
+
+/* ==============================================================
+   CUBE PREVIEW
+
+   Hand-ports of five of the animation functions in
+   src/animations.mjs, at their default parameters, evaluated over
+   the measured address layout:
+
+     44 addresses, in 4 blocks of 11
+     the blocks drive 1, 2, 4 and 5 edges  (12 edges, 132 LEDs)
+
+   The wiring is branching-parallel with UNEVEN fan-out, so there
+   is no single "LEDs per address" figure. Edges downstream of a
+   split are electrically ganged and always show the same colour.
+
+   WHICH edges belong to which block was never confirmed, so the
+   assignment below is nominal. The block sizes are measured; the
+   edge identities are not. See #limits.
+   ============================================================== */
+(function () {
+  var canvas = document.getElementById('cube');
+  if (!canvas || !canvas.getContext) return;
+  var ctx = canvas.getContext('2d');
+
+  var N = 44, PER_EDGE = 11;
+  /* Edges per address block, measured. Sums to 12. */
+  var BLOCK_EDGES = [1, 2, 4, 5];
+
+  /* ---------- maths, lifted from src/animations.mjs ---------- */
+  var clamp01 = function (x) { return x < 0 ? 0 : x > 1 ? 1 : x; };
+  var fract   = function (x) { return x - Math.floor(x); };
+  var lerp    = function (a, b, t) { return a + (b - a) * t; };
+  var hash    = function (x) { return fract(Math.sin(x * 127.1) * 43758.5453); };
+
+  function noise(x) {
+    var i = Math.floor(x), f = x - i, u = f * f * (3 - 2 * f);
+    return lerp(hash(i), hash(i + 1), u);
+  }
+  function fbm(x, oct) {
+    var v = 0, amp = 0.5, freq = 1;
+    for (var o = 0; o < (oct || 3); o++) { v += amp * noise(x * freq); freq *= 2; amp *= 0.5; }
+    return v;
+  }
+  function hsv(h, s, v) {
+    h = fract(h) * 6;
+    var i = Math.floor(h), f = h - i;
+    var p = v * (1 - s), q = v * (1 - s * f), t = v * (1 - s * (1 - f));
+    switch (i % 6) {
+      case 0: return [v, t, p];
+      case 1: return [q, v, p];
+      case 2: return [p, v, t];
+      case 3: return [p, q, v];
+      case 4: return [t, p, v];
+      default: return [v, p, q];
+    }
+  }
+  function iq(t, a, b, c, d) {
+    return [0, 1, 2].map(function (k) {
+      return clamp01(a[k] + b[k] * Math.cos(6.28318 * (c[k] * t + d[k])));
+    });
+  }
+  function hexRGB(hex) {
+    var n = parseInt(String(hex).replace('#', ''), 16);
+    return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255];
+  }
+  /* shortest cyclic distance on a 0..1 ring */
+  function ringDist(a, b) { var d = Math.abs(a - b); return d > 0.5 ? 1 - d : d; }
+
+  /* 'spectrum', the default palette for the patterns that take one */
+  var PAL_SPECTRUM = [[0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [1, 1, 1], [0, 0.33, 0.67]];
+
+  /* ---------- the animations themselves ---------- */
+  var ANIMS = {
+    aurora: function (c) {
+      var a = fbm(c.u * 2.2 + c.t * 0.25, 3);
+      var b = fbm(c.u * 1.408 - c.t * 0.17 + 31.7, 3);
+      var ga = Math.pow(clamp01(a * 1.5), 2);
+      var gb = Math.pow(clamp01(b * 1.4), 3);
+      var A = hexRGB('33ff88'), B = hexRGB('8844ff');
+      return [0, 1, 2].map(function (k) { return clamp01(A[k] * ga + B[k] * gb); });
+    },
+    comet: function (c) {
+      var falloff = (2.303 * N) / 12;           /* tail = 12 LEDs */
+      var head = fract(c.t * 0.25);
+      var d = ringDist(c.uw, head);
+      var v = Math.exp(-d * falloff) + 0.6 * Math.exp(-d * falloff * 0.27);
+      var col = hsv(0.55 + head * 0.4, 0.7, 1);
+      return col.map(function (x) { return x * clamp01(v); });
+    },
+    rainbow: function (c) { return hsv(c.uw + c.t * 0.15, 0.95, 1); },
+    pulse: function (c) {
+      var phase = fract(c.e - c.t * 0.4);       /* rate 0.4 */
+      var v = Math.pow(1 - phase, 3);           /* width 3 */
+      return iq(c.uw * 0.3 + c.t * 0.05,        /* spread 0.3 */
+                PAL_SPECTRUM[0], PAL_SPECTRUM[1], PAL_SPECTRUM[2], PAL_SPECTRUM[3])
+        .map(function (x) { return x * v; });
+    },
+    fire: function (c) {
+      var n = fbm(c.u * 4 + c.t * 1.6, 3);      /* scale 4, rate 1.6 */
+      var heat = clamp01(Math.pow(n, 1.5) * 1.6);
+      return [
+        clamp01(heat * 1.6),
+        clamp01(Math.pow(heat, 2.2) * 1.1),
+        clamp01(Math.pow(heat, 6.5) * 0.7)      /* blue tips 0.55 */
+      ];
+    }
+  };
+  var current = 'aurora';
+
+  /* ---------- cube geometry: standing on one corner ---------- */
+  var V = [];
+  for (var xi = 0; xi < 2; xi++)
+    for (var yi = 0; yi < 2; yi++)
+      for (var zi = 0; zi < 2; zi++)
+        V.push([xi * 2 - 1, yi * 2 - 1, zi * 2 - 1]);
+
+  /* the 12 edges: vertex pairs differing in exactly one coordinate */
+  var E = [];
+  for (var a = 0; a < 8; a++) {
+    for (var b = a + 1; b < 8; b++) {
+      var diff = 0;
+      for (var k = 0; k < 3; k++) if (V[a][k] !== V[b][k]) diff++;
+      if (diff === 1) E.push([a, b]);
+    }
+  }
+
+  /* Re-basis so the (1,1,1) body diagonal points up - the cube rests
+     on a vertex, which is how the real one sits on its stand. */
+  function norm(v) {
+    var m = Math.hypot(v[0], v[1], v[2]);
+    return [v[0] / m, v[1] / m, v[2] / m];
+  }
+  function cross(p, q) {
+    return [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+  }
+  var UP = norm([1, 1, 1]);
+  var RIGHT = norm(cross(UP, [1, 0, 0]));
+  var FWD = cross(RIGHT, UP);
+
+  var BASIS = V.map(function (p) {
+    return [
+      p[0] * RIGHT[0] + p[1] * RIGHT[1] + p[2] * RIGHT[2],
+      p[0] * UP[0]    + p[1] * UP[1]    + p[2] * UP[2],
+      p[0] * FWD[0]   + p[1] * FWD[1]   + p[2] * FWD[2]
+    ];
+  });
+
+  /* Flatten [1,2,4,5] into an edge -> block lookup. */
+  var EDGE_BLOCK = [];
+  BLOCK_EDGES.forEach(function (n, block) {
+    for (var k = 0; k < n; k++) EDGE_BLOCK.push(block);
+  });
+
+  var reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resize() {
+    var w = canvas.clientWidth || 500;
+    var h = Math.round(w * 0.82);
+    canvas.width  = Math.round(w * DPR);
+    canvas.height = Math.round(h * DPR);
+    canvas.style.height = h + 'px';
+  }
+
+  function project(p, yaw) {
+    var cs = Math.cos(yaw), sn = Math.sin(yaw);
+    var x = p[0] * cs - p[2] * sn;
+    var z = p[0] * sn + p[2] * cs;
+    var persp = 3.6 / (3.6 + z);                 /* gentle perspective */
+    return { x: x * persp, y: -p[1] * persp, z: z };
+  }
+
+  function draw(time) {
+    var w = canvas.width, h = canvas.height;
+    var t = time / 1000;
+    var yaw = reduced ? 0.55 : t * 0.19;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    /* Standing on a vertex the silhouette is a hexagon reaching further than
+       a face-on cube, and every lit address carries a halo wider than the
+       point. Sized so the vertices and their glow stay inside the panel. */
+    var scale = Math.min(w, h) * 0.245;
+
+    /* Depth-sort so far edges are drawn (and dimmed) behind near ones. */
+    var order = E.map(function (e, i) {
+      var pa = project(BASIS[e[0]], yaw), pb = project(BASIS[e[1]], yaw);
+      return { i: i, e: e, z: (pa.z + pb.z) / 2, a: pa, b: pb };
+    }).sort(function (p, q) { return q.z - p.z; });
+
+    ctx.globalCompositeOperation = 'lighter';
+
+    for (var oi = 0; oi < order.length; oi++) {
+      var seg = order[oi];
+      var depth = 1 - clamp01((seg.z + 1.5) / 3);      /* 0 = far, 1 = near */
+      var fade = 0.34 + 0.66 * depth;
+
+      /* the acrylic edge itself, barely there */
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = 'rgba(130,144,184,' + (0.08 + 0.10 * depth).toFixed(3) + ')';
+      ctx.lineWidth = 1 * DPR;
+      ctx.beginPath();
+      ctx.moveTo(seg.a.x * scale, seg.a.y * scale);
+      ctx.lineTo(seg.b.x * scale, seg.b.y * scale);
+      ctx.stroke();
+
+      ctx.globalCompositeOperation = 'lighter';
+
+      /* Which block drives this edge. Block sizes are measured; which
+         edge sits in which block is not, so this ordering is nominal. */
+      var block = EDGE_BLOCK[seg.i];
+
+      for (var pos = 0; pos < PER_EDGE; pos++) {
+        var addr = block * PER_EDGE + pos;
+        var f = (pos + 0.5) / PER_EDGE;
+
+        var rgb = ANIMS[current]({
+          i: addr, n: N, perEdge: PER_EDGE, t: t,
+          u: addr / (N - 1),
+          uw: addr / N,
+          e: (addr % PER_EDGE) / PER_EDGE
+        });
+
+        var r = Math.round(255 * clamp01(rgb[0]) * fade);
+        var g = Math.round(255 * clamp01(rgb[1]) * fade);
+        var bl = Math.round(255 * clamp01(rgb[2]) * fade);
+        var lum = (r + g + bl) / 765;
+        if (lum < 0.012) continue;
+
+        var px = (seg.a.x + (seg.b.x - seg.a.x) * f) * scale;
+        var py = (seg.a.y + (seg.b.y - seg.a.y) * f) * scale;
+        var rad = (2.6 + 6.8 * lum) * DPR * (0.72 + 0.28 * depth);
+
+        var grad = ctx.createRadialGradient(px, py, 0, px, py, rad * 2.6);
+        grad.addColorStop(0,    'rgba(' + r + ',' + g + ',' + bl + ',' + (0.95 * fade).toFixed(3) + ')');
+        grad.addColorStop(0.32, 'rgba(' + r + ',' + g + ',' + bl + ',' + (0.30 * fade).toFixed(3) + ')');
+        grad.addColorStop(1,    'rgba(' + r + ',' + g + ',' + bl + ',0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(px, py, rad * 2.6, 0, 6.2832);
+        ctx.fill();
+
+        /* hot core */
+        /* Hot core brightened along its own hue. A flat +60 per channel
+           desaturates, which costs the blues most: a pure blue point goes
+           pale rather than bright, and reads as almost nothing here. */
+        var peak = Math.max(r, g, bl) || 1;
+        var boost = Math.min(255 / peak, 1.7);
+        ctx.fillStyle = 'rgba(' + Math.round(r * boost) + ',' + Math.round(g * boost) + ',' + Math.round(bl * boost) + ',' + (0.9 * fade).toFixed(3) + ')';
+        ctx.beginPath();
+        ctx.arc(px, py, Math.max(0.9, rad * 0.36), 0, 6.2832);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  var raf = null;
+  function frame(ts) { draw(ts); raf = requestAnimationFrame(frame); }
+
+  function start() {
+    if (raf !== null) return;
+    if (reduced) { draw(2400); return; }          /* one static frame */
+    raf = requestAnimationFrame(frame);
+  }
+  function stop() {
+    if (raf !== null) { cancelAnimationFrame(raf); raf = null; }
+  }
+
+  resize();
+  window.addEventListener('resize', function () { resize(); if (reduced) draw(2400); });
+
+  /* Don't burn a GPU on a canvas nobody is looking at. */
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      entries[0].isIntersecting ? start() : stop();
+    }, { threshold: 0.01 }).observe(canvas);
+  } else {
+    start();
+  }
+  document.addEventListener('visibilitychange', function () {
+    document.hidden ? stop() : start();
+  });
+
+  /* pattern chips */
+  var chips = document.querySelectorAll('.chip[data-anim]');
+  Array.prototype.forEach.call(chips, function (chip) {
+    chip.addEventListener('click', function () {
+      current = chip.getAttribute('data-anim');
+      Array.prototype.forEach.call(chips, function (c) {
+        c.setAttribute('aria-pressed', String(c === chip));
+      });
+      if (reduced) draw(2400);
+    });
+  });
+})();
+
+</script>
+
+</body>
+</html>

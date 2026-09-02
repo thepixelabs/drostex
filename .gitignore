@@ -9,33 +9,95 @@ build/
 out/
 *.tsbuildinfo
 
+# test/coverage output
+coverage/
+.nyc_output/
+*.lcov
+
 # local runtime state
 .drostex/
 profiles/*.local.json
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# env + secrets — never commit
+.env
+.env.*
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.cer
+id_rsa
+id_ed25519
+credentials.json
+*.credentials.json
+secrets.json
+*.secrets.json
+
+# npm/node local state
+.npm/
+.node_repl_history
+.eslintcache
 
 # editor / tooling
 .vscode/
 .idea/
 *.swp
+*.code-workspace
 
 # agent + assistant state — never commit
 .claude/
 .cursor/
+.cursorrules
+.cursorignore
 .aider*
+.windsurf/
+.windsurfrules
+.continue/
+.clinerules/
+.roo/
+.roomodes
+.codex/
+.amp/
+.junie/
+.gemini/
+.github/copilot-instructions.md
 CLAUDE.md
 AGENTS.md
+GEMINI.md
 
 # internal planning + notes — not for the public repo
+# broad on purpose: any stray note/draft file should fall in here by default
 plans/
 notes/
 scratch/
+drafts/
+private/
 docs/internal/
 *.plan.md
+*.notes.md
+*.draft.md
+TODO.md
+NOTES.md
+THINKING.md
+SCRATCH.md
+WIP.md
 
 # OS
 .DS_Store
+._*
+.AppleDouble
+.LSOverride
 Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# machine-local overrides — never shared config
+*.local.*
 
 # raw per-device measurement captures (contain MAC / LAN IP)
 profiles/nano-observations.json
@@ -47,3 +109,6 @@ config.json
 
 # saved looks — user data, not source
 presets.json
+
+# starred patterns and built-in effects — user data, not source
+favorites.json

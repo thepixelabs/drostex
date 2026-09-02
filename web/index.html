@@ -3,24 +3,70 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="dark light">
 <meta name="drostex-build" content="__BUILD__">
 <title>Drostex</title>
+<!-- Applied before the stylesheet so choosing light does not cost you a frame
+     of near-black first. app.js is a deferred module and would run far too
+     late for that, which is why this is inline and up here.
+
+     No stored choice means no attribute, and no attribute means dark. This app
+     was dark only by design and stays that way until someone says otherwise:
+     following the OS by default would flip it to light for anyone whose
+     machine is light, which is not a decision the app gets to make for them. -->
+<script>
+  try {
+    var t = localStorage.getItem('drostex-theme');
+    if (t === 'light' || t === 'dark' || t === 'system') {
+      document.documentElement.setAttribute('data-theme', t);
+    }
+  } catch (e) { /* storage blocked; dark is a fine answer */ }
+</script>
 <link rel="stylesheet" href="/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%237C5CFC'/><rect x='9' y='9' width='14' height='14' rx='2' fill='none' stroke='%23fff' stroke-width='2'/></svg>">
 </head>
 <body>
 
 <header class="topbar">
+  <!-- The cube's name is the h1, not the app's. This is a control surface for
+       one physical object in the room; the object is the subject of the page
+       and Drostex is only the thing pointing at it. -->
   <div class="brand">
     <span class="mark" aria-hidden="true"></span>
-    <span class="wordmark">Drostex</span>
-    <span class="device" id="device-name">&mdash;</span>
+    <div class="brand-id">
+      <span class="wordmark">Drostex</span>
+      <!-- Editable in place. The name is the cube's own, stored on the cube,
+           so this writes through rather than keeping a local nickname that
+           would disagree with every other client on the network. -->
+      <h1 class="device" id="device-name" tabindex="0" role="button"
+          title="Click to rename the cube">&mdash;</h1>
+      <input class="device-edit" id="device-rename" hidden maxlength="32"
+             aria-label="Cube name" autocomplete="off" spellcheck="false">
+    </div>
   </div>
   <div class="topbar-right">
     <canvas id="sparkline" width="120" height="22" aria-label="Power draw over time"></canvas>
     <span class="draw" id="device-power">&mdash;</span>
     <span class="build" id="build" title="Build of the page you are viewing"></span>
+    <!-- Three states rather than a toggle: "system" has to be reachable, and a
+         two-way switch cannot express it. -->
+    <div class="theme-switch" id="theme-switch" role="group" aria-label="Colour theme">
+      <button type="button" data-theme-choice="light" aria-pressed="false" title="Light" aria-label="Light theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
+        </svg>
+      </button>
+      <button type="button" data-theme-choice="dark" aria-pressed="true" title="Dark" aria-label="Dark theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
+        </svg>
+      </button>
+      <button type="button" data-theme-choice="system" aria-pressed="false" title="Match system" aria-label="Match system theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>
+        </svg>
+      </button>
+    </div>
     <div class="tally" id="tally" data-state="idle">
       <span class="dot" aria-hidden="true"></span>
       <span id="tally-text">connecting&hellip;</span>
@@ -30,7 +76,7 @@
 
 <!-- Modifiers sit outside the tabs on purpose: they apply to everything,
      whether Drostex is streaming pixels or the cube is running its own effect. -->
-<section class="modifiers" aria-label="Global controls">
+<section class="modifiers" aria-label="Global controls" data-cat="modifiers">
   <label class="switch power">
     <input type="checkbox" id="power">
     <span>Power</span>
@@ -83,17 +129,20 @@
     <strong id="offline-title">Can&rsquo;t reach the cube.</strong>
     <span id="offline-detail">Check it&rsquo;s powered on and on the same network as this computer.</span>
     <button class="btn" id="retry">Retry</button>
+    <!-- The address is the thing most likely to be wrong, and the one thing
+         the banner can actually fix by itself. -->
+    <button class="btn" id="find-cube">Find my cube</button>
   </div>
 
   <!-- ── My looks ─────────────────────────────────────────── -->
   <section id="panel-studio" class="panel is-active" role="tabpanel">
     <div class="studio">
       <div class="studio-main">
-        <h2 class="section-title">Saved</h2>
-        <div class="grid grid-presets" id="presets"></div>
+        <h2 class="section-title" data-cat="saved">Saved</h2>
+        <div class="grid grid-presets" id="presets" data-cat="saved"></div>
 
-        <h2 class="section-title">Start from a pattern</h2>
-        <div class="grid" id="animations" aria-label="Patterns"></div>
+        <h2 class="section-title" data-cat="patterns">Start from a pattern</h2>
+        <div class="grid" id="animations" aria-label="Patterns" data-cat="patterns"></div>
 
         <div class="playback">
           <div class="mod mod-wide">
@@ -117,6 +166,15 @@
       </div>
 
       <aside class="inspector" id="inspector" hidden>
+        <!-- A readback of the frames we are sending, not a simulation. The
+             address-to-edge mapping was never confirmed on hardware, so this
+             shows what the frame looks like, not which corner is lit. -->
+        <figure class="preview" id="preview">
+          <canvas id="cube" width="520" height="480"
+                  aria-label="Live preview of the frames being sent to the cube"></canvas>
+          <figcaption id="preview-note">edge layout is approximate</figcaption>
+        </figure>
+
         <div class="inspector-head">
           <strong id="inspector-title">&mdash;</strong>
           <span class="inspector-actions">
@@ -141,27 +199,48 @@
       <input type="search" id="fx-search" placeholder="Search effects&hellip;" autocomplete="off">
       <div class="seg" id="fx-filter" role="group" aria-label="Filter effects">
         <button data-v="all" class="is-on">All</button>
+        <button data-v="fav" title="Only effects you have starred">&#9733; Starred</button>
         <button data-v="sound">Sound-reactive</button>
         <button data-v="static">Static</button>
       </div>
+      <!-- A native <select> cannot draw a swatch inside an option, and the
+           whole point of a palette picker is seeing the colours - so this is a
+           real listbox. Keyboard behaviour is implemented to match. -->
       <span class="field">
-        <label for="palette">Palette</label>
-        <select id="palette"></select>
+        <span class="pseudo-label" id="palette-label">Palette</span>
+        <div class="picker" id="palette">
+          <button type="button" class="picker-btn" id="palette-btn"
+                  aria-haspopup="listbox" aria-expanded="false"
+                  aria-labelledby="palette-label palette-current">
+            <span id="palette-current">&mdash;</span>
+            <span class="dots" id="palette-current-dots" aria-hidden="true"></span>
+          </button>
+          <ul class="picker-list" id="palette-list" role="listbox"
+              aria-labelledby="palette-label" tabindex="-1" hidden></ul>
+        </div>
+        <span class="owner" id="pal-owner"></span>
       </span>
     </div>
 
+    <!-- Every one of these four reads 0 to mean "use whatever this pattern
+         wants", so the sliders start at 1: dragging to 0 does not mean speed
+         zero, it means handing the control back. The `owner` spans say which
+         side is currently deciding. -->
     <div class="playback">
       <div class="mod mod-wide">
         <label for="sx">Effect speed <output id="sx-out">&mdash;</output></label>
-        <input type="range" id="sx" min="0" max="255" value="128">
+        <input type="range" id="sx" min="1" max="255" value="128">
+        <span class="owner" id="sx-owner"></span>
       </div>
       <div class="mod mod-wide">
         <label for="ix">Intensity <output id="ix-out">&mdash;</output></label>
-        <input type="range" id="ix" min="0" max="255" value="128">
+        <input type="range" id="ix" min="1" max="255" value="128">
+        <span class="owner" id="ix-owner"></span>
       </div>
       <span class="field">
         <label for="fx-symmetry">Symmetry</label>
         <select id="fx-symmetry"></select>
+        <span class="owner" id="sym-owner"></span>
       </span>
       <span class="field">
         <label for="fx-sparkle">Sparkle</label>
@@ -177,18 +256,26 @@
       <label class="switch"><input type="checkbox" id="psd"><span>Freeze</span></label>
       <label class="switch"><input type="checkbox" id="nl"><span>Nightlight</span></label>
       <button class="btn btn-warp" id="warp" title="A one-shot animation built into the cube">Warp drive</button>
+      <p class="hint hint-wide" id="defaults-note">
+        Every pattern carries its own speed, intensity, symmetry and palette.
+        The cube is set to hand speed and intensity back to the pattern whenever
+        the pattern changes &mdash; symmetry and palette it leaves alone.
+      </p>
     </div>
 
-    <h2 class="section-title">The cube&rsquo;s own rotations</h2>
+    <h2 class="section-title" data-cat="rotations">The cube&rsquo;s own rotations</h2>
     <p class="hint" style="margin-top:-4px">
-      These are playlists, not single effects. The cube cycles its own patterns
-      every 60&nbsp;seconds with fresh colours every 10, entirely on its own &mdash;
-      no computer needed, and it keeps going after you close Drostex.
+      These are playlists, not single effects: each one rotates through its own
+      block of the patterns below, in order. The cube is currently set to hold
+      each for 60&nbsp;seconds and refresh colours every 10, entirely on its own
+      &mdash; no computer needed, and it keeps going after you close Drostex.
     </p>
-    <div class="grid" id="modes" aria-label="Built-in rotations"></div>
+    <div class="grid" id="modes" aria-label="Built-in rotations" data-cat="rotations"></div>
 
-    <h2 class="section-title">Single effects</h2>
-    <div class="grid grid-dense" id="effects" aria-label="Built-in effects"></div>
+    <h2 class="section-title" data-cat="builtin">Single effects</h2>
+    <div class="fx-chip" id="fx-chip" hidden></div>
+    <p class="hint" id="fx-colors-note" hidden></p>
+    <div class="grid grid-dense" id="effects" aria-label="Built-in effects" data-cat="builtin"></div>
   </section>
 </main>
 

@@ -32,6 +32,57 @@
   --warn: #FFB020;
   --info: #00C2FF;
 
+  /* ── category colour ────────────────────────────────────────
+     Five kinds of content used to look identical, so one violet accent was
+     asked to mean brand, focus, hover and selected all at once. These split
+     along the seam the app is already built on - two pixel sources, plus
+     chrome that applies to both:
+
+       OURS (Drostex streams the pixels)  → pink family
+       THE CUBE'S OWN (firmware draws)    → teal family
+       CHROME (applies to whichever runs) → violet
+
+     --cat-patterns and --cat-builtin are aliases, not new colours: the tally
+     ALREADY turns --stream while we are streaming and --ok while the cube's
+     own effect runs. Reusing them means a section is coloured the same as the
+     tally goes when something from that section takes over the LEDs.
+
+     Measured against --bg-void, which is what section titles actually sit on:
+     patterns 5.4:1, saved 6.3:1, builtin 10.6:1, rotations 8.1:1,
+     modifiers 7.8:1 - all clear of AA's 4.5:1. --accent itself is NOT in this
+     set: it measures ~4.5:1, which is why nothing in this file has ever used
+     it as a text colour. --cat-modifiers is a lightened relative of it that
+     is safe to read. */
+  --cat-saved: #F155B8;
+  --cat-patterns: var(--stream);
+  --cat-rotations: #23B7C7;
+  --cat-builtin: var(--ok);
+  --cat-modifiers: #A994F9;
+
+  /* ── glass ──────────────────────────────────────────────────
+     Real backdrop blur is rationed to the three singleton surfaces that float
+     over scrolling content. Never on a card: the effects grid can put ~160 of
+     them on screen at once, and a blur region under each is real GPU cost for
+     something that is shoulder-to-shoulder with its neighbours anyway. Cards
+     get a material LOOK instead - gradient plus a 1px lit top edge - which
+     costs nothing at that count. */
+  --glass-blur-sm: 10px;
+  --glass-blur-md: 16px;
+  --glass-sat: 160%;
+  --glass-bg-chrome: rgba(20, 22, 29, .58);
+  --glass-bg-panel: rgba(29, 32, 41, .64);
+  --glass-bg-fallback: rgba(20, 22, 29, .93);
+  --glass-edge: rgba(255, 255, 255, .09);
+  --glass-sheen: inset 0 1px 0 rgba(255, 255, 255, .06);
+
+  --card-grad: linear-gradient(155deg, var(--bg-raised), var(--bg-surface) 62%);
+  --card-grad-hover: linear-gradient(155deg, var(--bg-hover), var(--bg-raised) 65%);
+  --card-sheen: inset 0 1px 0 rgba(255, 255, 255, .05);
+  --glass-grad-chrome: linear-gradient(180deg, rgba(29, 32, 41, .62), rgba(20, 22, 29, .34));
+  --dot-ring: rgba(255, 255, 255, .14);
+  --input-bg: rgba(255, 255, 255, .06);
+  --pop-shadow: 0 16px 40px -12px rgba(0, 0, 0, .8);
+
   --radius: 10px;
   --radius-sm: 6px;
   --dur: 160ms;
@@ -41,6 +92,15 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Category identity is set ONCE, on containers that already existed. Every
+   card rule below reads var(--cat) and inherits it for free, so none of the
+   JS that builds cards had to learn about colour. */
+[data-cat="saved"]     { --cat: var(--cat-saved); }
+[data-cat="patterns"]  { --cat: var(--cat-patterns); }
+[data-cat="rotations"] { --cat: var(--cat-rotations); }
+[data-cat="builtin"]   { --cat: var(--cat-builtin); }
+[data-cat="modifiers"] { --cat: var(--cat-modifiers); }
 
 /* The `hidden` attribute works by applying display:none from the UA
    stylesheet, which ANY class rule setting display will silently override.
@@ -65,26 +125,73 @@ body {
 /* ── top bar ─────────────────────────────────────────────── */
 .topbar {
   display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  padding: 13px 22px;
-  border-bottom: 1px solid var(--hairline);
-  background: rgba(20, 22, 29, .72);
-  backdrop-filter: blur(12px);
+  flex-wrap: wrap;
+  padding: 12px clamp(16px, 4vw, 22px);
+  border-bottom: 1px solid var(--glass-edge);
+  background: var(--glass-bg-fallback);
   position: sticky; top: 0; z-index: 20;
 }
-.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .topbar {
+    background: var(--glass-bg-chrome);
+    backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+    box-shadow: var(--glass-sheen);
+  }
+}
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
 .mark {
   width: 15px; height: 15px; border-radius: 4px; flex: none;
   border: 2px solid var(--accent);
   box-shadow: 0 0 14px rgba(124, 92, 252, .6), inset 0 0 7px rgba(124, 92, 252, .35);
 }
-.wordmark { font-weight: 600; letter-spacing: -.01em; }
+
+/* One line, two names, a hairline between them: "Drostex | My Cube".
+   They are optical PEERS - same size, both legible at a glance. Stacking them
+   made the app's name a 10px kicker nobody could read; going the other way and
+   shrinking the device name would only move the problem. Hierarchy is carried
+   by weight and fill instead of scale, so the cube's name still wins the eye
+   (it keeps the <h1> and the gradient) without either name being tiny. */
+.brand-id { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.wordmark {
+  flex: none;
+  font-size: clamp(15px, 1.6vw, 19px);
+  font-weight: 700;
+  letter-spacing: -.005em;
+  line-height: 1.2;
+  text-transform: none;
+  color: var(--text-1);
+}
+/* The divider is a pseudo-element, so the markup stays exactly two spans. An
+   inline-block sitting ON the baseline cannot shift the baseline it aligns to,
+   which is what keeps both names optically level at every clamp size. */
+.wordmark::after {
+  content: "";
+  display: inline-block; vertical-align: -.11em;
+  width: 1px; height: 1.05em; margin-left: 10px;
+  background: linear-gradient(180deg, var(--glass-edge), var(--hairline));
+}
 .device {
-  color: var(--text-2); font-size: 13px;
-  padding-left: 11px; border-left: 1px solid var(--hairline);
+  margin: 0;
+  /* Same clamp as the wordmark: the two names scale together and can never
+     drift back out of balance on a different viewport. */
+  font-size: clamp(15px, 1.6vw, 19px);
+  font-weight: 650;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  /* Solid colour first: an engine without background-clip:text simply skips
+     the three lines below and paints this, rather than rendering nothing. */
+  color: var(--text-1);
+  background: linear-gradient(120deg, var(--text-1) 30%, var(--accent-dim) 165%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  /* min-width:0 + shrink is what actually lets the ellipsis fire inside a flex
+     row; a vw cap guessed at the space instead of measuring it. */
+  flex: 0 1 auto; min-width: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.topbar-right { display: flex; align-items: center; gap: 11px; }
+.topbar-right { display: flex; align-items: center; gap: 11px; flex-wrap: wrap; }
 #sparkline { display: block; opacity: .9; }
 .draw { font: 11px var(--mono); color: var(--text-2); min-width: 46px; text-align: right; }
 
@@ -105,9 +212,17 @@ body {
 /* ── modifiers rail ──────────────────────────────────────── */
 .modifiers {
   display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap;
-  padding: 15px 22px;
-  border-bottom: 1px solid var(--hairline);
-  background: linear-gradient(180deg, rgba(29, 32, 41, .55), rgba(20, 22, 29, .2));
+  padding: 15px clamp(16px, 4vw, 22px);
+  border-bottom: 1px solid var(--glass-edge);
+  background: var(--glass-bg-fallback);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .modifiers {
+    background: var(--glass-grad-chrome);
+    backdrop-filter: blur(var(--glass-blur-sm)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(var(--glass-sat));
+    box-shadow: var(--glass-sheen);
+  }
 }
 .modifiers.is-disabled { opacity: .4; pointer-events: none; }
 .mod { display: flex; flex-direction: column; gap: 7px; }
@@ -129,18 +244,37 @@ main { padding: 22px; max-width: 1140px; margin: 0 auto; }
 .tabs { display: flex; gap: 2px; margin-bottom: 20px; border-bottom: 1px solid var(--hairline); }
 .tab {
   background: none; border: 0; border-bottom: 2px solid transparent;
-  color: var(--text-2); font: inherit; font-size: 14px; padding: 10px 15px; cursor: pointer;
+  color: var(--text-2); font: inherit; font-size: 14px; font-weight: 500;
+  padding: 10px 15px; cursor: pointer;
   transition: color var(--dur) var(--ease), border-color var(--dur) var(--ease);
 }
 .tab:hover { color: var(--text-1); }
-.tab.is-active { color: var(--text-1); border-bottom-color: var(--accent); }
+.tab.is-active { color: var(--text-1); font-weight: 600; }
+/* The two tabs ARE the two pixel sources, so each underline takes its family's
+   colour off the data-tab attribute that was already in the markup. */
+.tab[data-tab="studio"].is-active { border-bottom-color: var(--cat-patterns); }
+.tab[data-tab="onboard"].is-active { border-bottom-color: var(--cat-builtin); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; }
 
 .panel { display: none; }
 .panel.is-active { display: block; }
 
+/* The old 11px/.08em/grey label was the single most dated thing on the page -
+   five identical grey eyebrows over five unrelated kinds of content. Size and
+   colour carry the hierarchy now, so the tracking can relax; the short bar
+   marks a section where a full-width rule would just read as a divider. */
 .section-title {
-  font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--text-2); font-weight: 600; margin: 0 0 11px;
+  position: relative;
+  font-size: 13px; font-weight: 700; letter-spacing: .03em; text-transform: uppercase;
+  color: var(--text-2);
+  margin: 0 0 14px; padding-bottom: 9px;
+}
+.section-title[data-cat] { color: var(--cat); }
+.section-title::after {
+  content: '';
+  position: absolute; left: 0; bottom: 0;
+  width: 30px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--cat, var(--text-3)), transparent);
 }
 .section-title + .grid { margin-bottom: 26px; }
 
@@ -154,29 +288,57 @@ main { padding: 22px; max-width: 1140px; margin: 0 auto; }
 .grid-dense { grid-template-columns: repeat(auto-fill, minmax(146px, 1fr)); }
 .grid-presets { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 
+/* Written once and parameterised by --cat, rather than five near-identical
+   colour blocks. Needs color-mix() and :has(), both of which have shipped
+   everywhere current; the mechanical fallback if that ever matters is literal
+   rgba() values plus a class set in card(). */
 .card {
   position: relative; overflow: hidden; text-align: left; cursor: pointer;
-  background: var(--bg-surface);
+  background: var(--card-grad);
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 12px 14px 13px;
   color: var(--text-1); font: inherit;
+  box-shadow: var(--card-sheen);
   transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease),
-              transform var(--dur) var(--ease);
+              transform var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
-.card:hover { border-color: var(--accent-dim); background: var(--bg-hover); transform: translateY(-1px); }
+/* Category stripe only where there is no real-content swatch to speak for the
+   card already. Structural, so no JS has to remember to set a class. */
+.card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  background: linear-gradient(90deg, var(--cat, var(--accent)), transparent 85%);
+  opacity: .5;
+  transition: opacity var(--dur) var(--ease);
+}
+.card:has(.swatch)::before { display: none; }
+
+.card:hover {
+  border-color: color-mix(in srgb, var(--cat, var(--accent-dim)) 70%, var(--hairline));
+  background: var(--card-grad-hover);
+  transform: translateY(-1px);
+}
+.card:hover::before { opacity: 1; }
 .card:active { transform: translateY(0); }
+.card:focus-visible { outline: 2px solid var(--cat, var(--accent)); outline-offset: 2px; }
 .card.is-active {
-  border-color: var(--accent);
-  background: var(--bg-raised);
-  box-shadow: 0 0 0 1px var(--accent), 0 6px 26px -8px rgba(124, 92, 252, .55);
+  border-color: var(--cat, var(--accent));
+  background: linear-gradient(155deg, var(--bg-raised),
+              color-mix(in srgb, var(--cat, var(--accent)) 14%, var(--bg-raised)) 70%);
+  box-shadow: var(--card-sheen),
+              0 0 0 1px var(--cat, var(--accent)),
+              0 6px 26px -8px color-mix(in srgb, var(--cat, var(--accent)) 55%, transparent);
 }
+.card.is-active::before { opacity: 1; }
 /* A gradient sampled from the pattern's own palette - a real hint at what it
    looks like, not decoration. */
 .card .swatch {
-  display: block; height: 4px; border-radius: 3px; margin-bottom: 10px;
+  display: block; height: 5px; border-radius: 3px; margin-top: 10px;
   background: var(--sw, linear-gradient(90deg, #444, #888));
 }
+/* Dots inline in a sentence sit on the text baseline. */
+#fx-colors-note { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; max-width: 78ch; }
 .card .name { font-weight: 600; font-size: 14px; display: block; }
 .card .desc { color: var(--text-2); font-size: 12px; display: block; margin-top: 3px; line-height: 1.4; }
 .card.compact { padding: 10px 12px; }
@@ -187,17 +349,24 @@ main { padding: 22px; max-width: 1140px; margin: 0 auto; }
 }
 
 .card-add {
-  border-style: dashed; border-color: var(--accent-dim); background: transparent;
+  border-style: dashed; border-color: var(--cat, var(--accent-dim)); background: transparent;
   display: flex; align-items: center; justify-content: center; min-height: 74px;
 }
-.card-add:hover { background: rgba(124, 92, 252, .08); border-color: var(--accent); }
-.card-add .name { color: var(--accent); font-size: 14px; }
+.card-add::before { display: none; }
+.card-add:hover {
+  background: color-mix(in srgb, var(--cat, var(--accent)) 8%, transparent);
+  border-color: var(--cat, var(--accent));
+}
+.card-add .name { color: var(--cat, var(--accent)); font-size: 14px; }
 
 /* ── controls ────────────────────────────────────────────── */
+/* Card material, not glass: this rail scrolls with the content rather than
+   floating over it, so there is nothing behind it worth blurring. */
 .playback {
   display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap;
-  background: var(--bg-surface); border: 1px solid var(--hairline);
+  background: var(--card-grad); border: 1px solid var(--hairline);
   border-radius: var(--radius); padding: 15px 17px; margin-bottom: 22px;
+  box-shadow: var(--card-sheen);
 }
 
 input[type=range] {
@@ -252,7 +421,7 @@ input[type=search] { flex: 1; min-width: 160px; }
 .switch input:checked + span { color: var(--text-1); }
 
 /* segmented control */
-.seg { display: inline-flex; background: var(--bg-raised); border: 1px solid var(--hairline); border-radius: var(--radius-sm); overflow: hidden; }
+.seg { display: inline-flex; background: var(--bg-raised); border: 1px solid var(--hairline); border-radius: var(--radius-sm); overflow: hidden; box-shadow: var(--card-sheen); }
 .seg button {
   background: none; border: 0; color: var(--text-2); font: inherit; font-size: 12px;
   padding: 7px 12px; cursor: pointer; transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
@@ -266,8 +435,16 @@ input[type=search] { flex: 1; min-width: 160px; }
 
 /* ── inspector ───────────────────────────────────────────── */
 .inspector {
-  background: var(--bg-surface); border: 1px solid var(--hairline);
-  border-radius: var(--radius); padding: 16px; position: sticky; top: 78px;
+  background: var(--glass-bg-fallback); border: 1px solid var(--glass-edge);
+  border-radius: var(--radius); padding: 16px; position: sticky; top: 92px;
+  box-shadow: var(--glass-sheen);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .inspector {
+    background: var(--glass-bg-panel);
+    backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+  }
 }
 .inspector-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
@@ -317,18 +494,157 @@ input[type=search] { flex: 1; min-width: 160px; }
 .save-row { display: flex; gap: 8px; margin-top: 18px; padding-top: 15px; border-top: 1px solid var(--hairline); }
 .save-row input { flex: 1; min-width: 0; }
 
-/* ── preset cards ────────────────────────────────────────── */
-.preset .del {
-  position: absolute; top: 7px; right: 8px;
+/* ── stars and delete ────────────────────────────────────── */
+.card .del, .card .fav {
+  position: absolute; top: 5px;
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px;          /* 24px is the WCAG 2.5.8 floor; the old
+                                         box was ~19x23 and missed it */
   background: none; border: 0; color: var(--text-2); cursor: pointer;
-  font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 4px; opacity: 0;
+  line-height: 1; padding: 0; border-radius: 4px;
   transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
 }
-.preset:hover .del { opacity: 1; }
-.preset .del:hover { color: var(--stream); background: rgba(255, 45, 85, .12); }
+/* Both controls live top-right, star then delete. They used to sit on opposite
+   corners, which was fine while the colour swatch occupied the top edge - now
+   the name does, and a star on the left ran straight through it. */
+.card .del { right: 6px; font-size: 15px; opacity: 0; }
+/* The star is ALWAYS visible, unlike delete. Hiding it until hover was a real
+   mistake: a control you cannot see is a feature nobody knows exists, and
+   there is no destructive-action argument for hiding this one. Delete stays
+   hover-revealed precisely because it IS destructive. */
+.card .fav { font-size: 14px; opacity: .5; right: 6px; }
+.preset .fav { right: 30px; }        /* make room for the delete button */
+.card.has-fav .name { padding-right: 26px; }
+.preset.has-fav .name { padding-right: 52px; }
+/* :focus-within matters as much as :hover here - without it a keyboard user
+   tabs onto a real button that is opacity:0, taking its focus ring with it. */
+.card:hover .del, .card:focus-within .del { opacity: 1; }
+.card:hover .fav, .card:focus-within .fav { opacity: 1; }
+.card .fav[aria-pressed="true"] { opacity: 1; color: var(--warn); }
+.card .fav:hover { color: var(--warn); background: rgba(255, 176, 32, .12); }
+.card .del:hover { color: var(--stream); background: rgba(255, 45, 85, .12); }
+/* Compact effect cards are dense; the sound icon already owns the top-right,
+   so the star sits beside it rather than on top of it. */
+.card.compact .sound { right: 30px; }
 .preset .meta { font: 10px var(--mono); color: var(--text-2); display: block; margin-top: 3px; }
 
 .empty { color: var(--text-2); font-size: 13px; grid-column: 1 / -1; margin: 0; padding: 14px 0; }
+[data-cat] .empty { border-left: 2px solid color-mix(in srgb, var(--cat) 50%, transparent); padding-left: 12px; }
+.empty.is-loading { animation: pulse-fade 1.4s var(--ease) infinite; }
+.empty.is-error { color: var(--warn); }
+@keyframes pulse-fade { 50% { opacity: .45; } }
+
+/* ── playlists ───────────────────────────────────────────────
+   The reveal control is a SIBLING of the card, never nested inside it. A
+   button's accessible name is the flattened text of everything in it, so a
+   nested control would rename the card that activates the playlist. */
+.mode-wrap { position: relative; display: flex; flex-direction: column; }
+.mode-wrap .card { flex: 1; }
+.mode-filter {
+  margin-top: 6px; align-self: flex-start;
+  background: none; border: 0; padding: 4px 2px; cursor: pointer;
+  font: 12px var(--sans); color: var(--cat, var(--accent));
+  transition: opacity var(--dur) var(--ease);
+}
+.mode-filter:hover { text-decoration: underline; }
+.mode-filter[aria-expanded="true"] { font-weight: 600; }
+/* A playlist that is running but has handed the screen to one of its patterns:
+   dimmer than is-active, because it is the cause, not the thing you are
+   looking at. */
+.card.is-playing-from {
+  border-color: color-mix(in srgb, var(--cat) 55%, var(--hairline));
+}
+.card.is-playing-from::before { opacity: 1; }
+.card .count { font: 10px var(--mono); color: var(--text-2); display: block; margin-top: 5px; }
+
+.fx-chip {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: -4px 0 12px; font-size: 12px; color: var(--text-2);
+}
+.fx-chip b {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-weight: 600; color: var(--cat-rotations);
+  background: color-mix(in srgb, var(--cat-rotations) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--cat-rotations) 40%, transparent);
+  border-radius: 100px; padding: 4px 10px;
+}
+.fx-chip button {
+  background: none; border: 0; color: inherit; cursor: pointer;
+  font: inherit; font-size: 14px; line-height: 1; padding: 0;
+}
+.fx-chip button:hover { color: var(--text-1); }
+
+/* ── who owns a device control ───────────────────────────────
+   0 in any of these four fields means "whatever this pattern wants", which is
+   invisible when the UI renders it as a value like any other. */
+.owner {
+  font-size: 10px; letter-spacing: .04em; color: var(--text-2);
+  display: flex; align-items: center; gap: 6px; min-height: 15px;
+}
+.owner[data-own="theirs"] { color: var(--cat-builtin); }
+.owner[data-own="yours"] { color: var(--text-2); }
+.owner button {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: var(--accent); text-decoration: underline;
+}
+.owner button:hover { color: var(--text-1); }
+/* `.hint` was used in the markup but never had a rule, so explanatory copy was
+   rendering at full body size and outweighing the controls it described. */
+.hint { font-size: 12px; color: var(--text-2); line-height: 1.5; margin: 0 0 13px; max-width: 68ch; }
+.hint-wide { flex-basis: 100%; margin: 2px 0 0; }
+
+/* `.section-title + .grid` cannot reach #modes, because a hint paragraph sits
+   between them - so the reveal row was colliding with the next heading. */
+#modes { margin-bottom: 30px; }
+
+/* ── palette picker ──────────────────────────────────────── */
+.pseudo-label {
+  font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-2);
+}
+.picker { position: relative; }
+.picker-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-width: 190px;
+  font: inherit; font-size: 13px; cursor: pointer;
+  background: var(--bg-raised); color: var(--text-1);
+  border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 7px 10px;
+}
+.picker-btn:hover { border-color: var(--accent); }
+.picker-list {
+  position: absolute; top: calc(100% + 5px); left: 0; z-index: 30;
+  margin: 0; padding: 5px; list-style: none;
+  min-width: 100%; max-height: 300px; overflow-y: auto;
+  background: var(--glass-bg-fallback);
+  border: 1px solid var(--glass-edge); border-radius: var(--radius);
+  box-shadow: var(--glass-sheen), var(--pop-shadow);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .picker-list {
+    background: var(--glass-bg-panel);
+    backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur-md)) saturate(var(--glass-sat));
+  }
+}
+.picker-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 7px 9px; border-radius: var(--radius-sm); cursor: pointer;
+  font-size: 13px; color: var(--text-1); white-space: nowrap;
+}
+.picker-list li:hover { background: var(--bg-hover); }
+.picker-list li[aria-selected="true"] { background: var(--accent-dim); color: #fff; }
+.picker-list li:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Dots, not a blended gradient: five discrete colours read as "these are the
+   colours" where a smooth ramp reads as one muddy average. */
+.dots { display: inline-flex; gap: 3px; flex: none; }
+.dots i {
+  width: 9px; height: 9px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--dot-ring);
+}
+.dots.is-unknown::after {
+  content: 'the pattern’s own';
+  font: 10px var(--mono); color: var(--text-2); opacity: .8;
+}
 
 /* ── offline ─────────────────────────────────────────────── */
 .offline {
@@ -368,3 +684,187 @@ input[type=search] { flex: 1; min-width: 160px; }
 .cycle-now b { color: var(--text-1); font-weight: 500; }
 
 .cycle-note { flex-basis: 100%; margin: 2px 0 0; font-size: 12px; color: var(--text-2); }
+
+/* ── cube preview ──────────────────────────────────────────
+   Dark-locked regardless of theme. It is a light object, and the
+   LEDs have nothing to read against on a pale panel. */
+.preview {
+  margin: 0 0 14px;
+  padding: 10px 10px 6px;
+  background: radial-gradient(ellipse 70% 58% at 50% 44%, #141a30 0%, #0a0c15 56%, #05060a 100%);
+  border: 1px solid #262c3e;
+  border-radius: 10px;
+}
+.preview canvas { display: block; width: 100%; height: auto; border-radius: 6px; }
+.preview figcaption {
+  margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid #1b2030;
+  font-size: 10.5px; letter-spacing: .02em; color: #6b7490;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.preview[data-live="false"] canvas { opacity: .32; filter: saturate(.4); }
+.preview[data-live="false"] figcaption::after { content: 'not streaming'; color: #6b7490; }
+.preview[data-live="true"] figcaption::after { content: 'live'; color: #34d399; }
+
+/* Rename field. Sized to match the h1 it replaces so the header does not
+   jump when it swaps in. */
+.device-edit {
+  font: inherit;
+  font-size: clamp(15px, 1.6vw, 19px);
+  font-weight: 650;
+  letter-spacing: -.015em;
+  color: var(--text-1);
+  background: var(--input-bg);
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 1px 6px;
+  width: 11ch;
+  max-width: 30vw;
+}
+.device-edit:focus { outline: none; box-shadow: 0 0 0 3px rgba(123, 110, 246, .25); }
+.device[role="button"] { cursor: text; }
+.device[role="button"]:hover { text-decoration: underline dotted; text-underline-offset: 3px; }
+
+/* ── light theme ────────────────────────────────────────────
+   The header comment above argues this app should be dark only. It is still
+   the palette the app is designed around, and every one of its values below
+   is left exactly as it was. What changed is only that the OS now gets a say
+   by default, with the switch in the top bar to override it either way.
+
+   Dark is the base palette, so only the tokens that must differ are restated
+   and every dark value is left untouched.
+
+   The accents keep their hue and their saturation. What changes is luminance,
+   and only as far as contrast on white forces: a violet tuned for 4.5:1 on
+   near black is about 3:1 on white, which fails for the section titles that
+   use it as text. They stay vivid rather than going pastel or muddy.
+
+   Elevation cannot be glow here. On near black a coloured bloom reads as
+   raised and a drop shadow is invisible; on white it is the other way round,
+   so --card-sheen carries a real shadow instead.
+
+   The cube preview is deliberately NOT themed in either mode. It is a picture
+   of a light emitting object and keeps its own black ground, which is why its
+   colours are literals rather than tokens. */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-void: #F1F2F8;
+  --bg-surface: #FFFFFF;
+  --bg-raised: #FFFFFF;
+  --bg-hover: #EAEBF4;
+  --hairline: #DFE1EC;
+
+  --text-1: #101219;
+  --text-2: #4F5568;
+  --text-3: #838AA0;
+
+  --accent: #6344F0;
+  --accent-dim: #4C31C8;
+  --stream: #E0003F;
+  --ok: #04835E;
+  --warn: #8F5D00;
+  --info: #0067B8;
+
+  --cat-saved: #CE0F86;
+  --cat-rotations: #077E8D;
+  --cat-modifiers: #6344F0;
+
+  --glass-bg-chrome: rgba(255, 255, 255, .75);
+  --glass-bg-panel: rgba(255, 255, 255, .82);
+  --glass-bg-fallback: rgba(246, 247, 251, .97);
+  --glass-edge: rgba(16, 18, 25, .12);
+  --glass-sheen: inset 0 1px 0 #FFFFFF;
+  --glass-grad-chrome: linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(241, 242, 248, .66));
+
+  --card-grad: linear-gradient(155deg, #FFFFFF, #FAFBFE 62%);
+  --card-grad-hover: linear-gradient(155deg, #FFFFFF, #F2F4FB 65%);
+  --card-sheen: inset 0 1px 0 #FFFFFF, 0 1px 2px rgba(16, 18, 25, .07);
+  --pop-shadow: 0 16px 40px -12px rgba(16, 18, 25, .28);
+
+  --dot-ring: rgba(16, 18, 25, .24);
+  --input-bg: rgba(16, 18, 25, .05);
+}
+
+/* "Match system" is an explicit choice from the switch, NOT the default.
+   No attribute means dark, which is the palette this app is designed around
+   and has always shipped. Defaulting to the OS would silently flip the whole
+   app to light for anyone on a light machine, which it does not get to
+   decide for them. */
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    color-scheme: light;
+
+    --bg-void: #F1F2F8;
+    --bg-surface: #FFFFFF;
+    --bg-raised: #FFFFFF;
+    --bg-hover: #EAEBF4;
+    --hairline: #DFE1EC;
+
+    --text-1: #101219;
+    --text-2: #4F5568;
+    --text-3: #838AA0;
+
+    --accent: #6344F0;
+    --accent-dim: #4C31C8;
+    --stream: #E0003F;
+    --ok: #04835E;
+    --warn: #8F5D00;
+    --info: #0067B8;
+
+    --cat-saved: #CE0F86;
+    --cat-rotations: #077E8D;
+    --cat-modifiers: #6344F0;
+
+    --glass-bg-chrome: rgba(255, 255, 255, .75);
+    --glass-bg-panel: rgba(255, 255, 255, .82);
+    --glass-bg-fallback: rgba(246, 247, 251, .97);
+    --glass-edge: rgba(16, 18, 25, .12);
+    --glass-sheen: inset 0 1px 0 #FFFFFF;
+    --glass-grad-chrome: linear-gradient(180deg, rgba(255, 255, 255, .86), rgba(241, 242, 248, .66));
+
+    --card-grad: linear-gradient(155deg, #FFFFFF, #FAFBFE 62%);
+    --card-grad-hover: linear-gradient(155deg, #FFFFFF, #F2F4FB 65%);
+    --card-sheen: inset 0 1px 0 #FFFFFF, 0 1px 2px rgba(16, 18, 25, .07);
+    --pop-shadow: 0 16px 40px -12px rgba(16, 18, 25, .28);
+
+    --dot-ring: rgba(16, 18, 25, .24);
+    --input-bg: rgba(16, 18, 25, .05);
+  }
+}
+
+/* ── theme switch ───────────────────────────────────────────
+   Three states, not a toggle: "system" has to be reachable, and a two-way
+   switch cannot express it. */
+.theme-switch {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: var(--bg-surface);
+}
+.theme-switch button {
+  display: grid;
+  place-items: center;
+  width: 26px; height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font: 11px var(--mono);
+  line-height: 1;
+  transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.theme-switch button:hover { color: var(--text-1); }
+.theme-switch button[aria-pressed="true"] {
+  background: var(--bg-hover);
+  color: var(--text-1);
+}
+.theme-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.theme-switch svg { width: 13px; height: 13px; display: block; }

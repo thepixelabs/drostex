@@ -6,6 +6,19 @@ drive. `profiles/nano-topology.json` is the answer for the unit this
 project was built against. If you're mapping a different cube, this is the
 order to run things in.
 
+## If you have a HyperCube10-SE or 15-SE
+
+You are the tester this project is missing. `src/models.mjs` already knows
+the vendor's counts for your cube (216 LEDs at 18 per edge, or 336 at 28),
+so `npm start` should recognise it and stream to it. What it does not know
+is whether the controller reports more addresses than drive LEDs, the way
+the Nano does (88 reported, 44 real), or how the edges gang together. Run
+`scripts/blink.mjs`, then `scripts/diagnose.mjs`, then `scripts/colors.mjs`,
+in that order, and open an issue with what you saw, even if it's "every
+address lit and nothing was odd". If you get as far as a block layout, a
+`profiles/hc10-se-topology.json` in the shape of the Nano's, plus the
+matching `reported`, `working` and `blocks` in `src/models.mjs`, is the PR.
+
 Everything below resolves the device address the same way as the rest of
 the project (`scripts/lib/config.mjs`): a bare IPv4 CLI argument, then
 `DROSTEX_HOST`, then `config.json`, then `config.example.json`. Start with

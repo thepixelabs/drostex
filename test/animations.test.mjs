@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   clamp01, fract, lerp, smoothstep, hexRGB, hsv, iq,
-  ANIMATIONS, defaultParams, SYMMETRIES, SYMMETRY_NAMES, makeContext,
+  ANIMATIONS, defaultParams, SYMMETRIES, SYMMETRY_NAMES, makeContext, resolveSchema,
 } from '../src/animations.mjs';
 
 // Real cube geometry (see scripts/lib/config.mjs defaults), used throughout so
@@ -157,7 +157,8 @@ describe('ANIMATIONS param schemas', () => {
 
   for (const [name, anim] of Object.entries(ANIMATIONS)) {
     it(`${name}: every declared param is well-formed`, () => {
-      for (const [key, def] of Object.entries(anim.params ?? {})) {
+      // A max of 'working' is resolved against the cube; check the resolved shape.
+      for (const [key, def] of Object.entries(resolveSchema(anim.params, { working: N }))) {
         assert.ok(VALID_TYPES.includes(def.type), `${name}.${key} has an unrecognised type: ${def.type}`);
 
         if (def.type === 'number') {
@@ -186,7 +187,7 @@ describe('ANIMATIONS param schemas', () => {
     });
 
     it(`${name}: defaultParams() returns exactly the declared keys, all in range`, () => {
-      const schema = anim.params ?? {};
+      const schema = resolveSchema(anim.params, { working: N });
       const d = defaultParams(name);
 
       assert.deepEqual(Object.keys(d).sort(), Object.keys(schema).sort());
@@ -284,4 +285,34 @@ describe('seam invariant: the strip is a closed loop', () => {
       }
     });
   }
+});
+
+describe('resolveSchema', () => {
+  const schema = {
+    tail: { type: 'number', label: 'Tail', default: 12, min: 1, max: 'working', step: 1 },
+    hue: { type: 'number', label: 'Hue', default: 0.5, min: 0, max: 1, step: 0.01 },
+  };
+
+  it("replaces a max of 'working' with the cube's address count and leaves the rest alone", () => {
+    const r = resolveSchema(schema, { working: 216 });
+    assert.equal(r.tail.max, 216);
+    assert.equal(r.tail.default, 12);
+    assert.deepEqual(r.hue, schema.hue);
+  });
+
+  it('pulls the default down on a cube smaller than it', () => {
+    const r = resolveSchema(schema, { working: 8 });
+    assert.equal(r.tail.max, 8);
+    assert.equal(r.tail.default, 8);
+  });
+
+  it('never produces a max below min, and tolerates an empty schema', () => {
+    assert.equal(resolveSchema(schema, { working: 0 }).tail.max, 1);
+    assert.deepEqual(resolveSchema(undefined, { working: 44 }), {});
+  });
+
+  it("comet's tail is the parameter that needs it", () => {
+    assert.equal(ANIMATIONS.comet.params.tail.max, 'working');
+    assert.equal(resolveSchema(ANIMATIONS.comet.params, { working: 44 }).tail.max, 44);
+  });
 });

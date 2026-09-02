@@ -868,3 +868,43 @@ input[type=search] { flex: 1; min-width: 160px; }
   outline-offset: 1px;
 }
 .theme-switch svg { width: 13px; height: 13px; display: block; }
+
+/* ---------- Open on your phone ---------- */
+.icon-btn {
+  display: grid; place-items: center;
+  width: 30px; height: 26px; padding: 0;
+  border: 1px solid var(--hairline); border-radius: 999px;
+  background: var(--bg-surface); color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--dur) var(--ease);
+}
+.icon-btn:hover, .icon-btn:focus-visible { color: var(--text-1); }
+.icon-btn svg { width: 14px; height: 14px; }
+.icon-btn.on { color: var(--accent); }
+
+.sheet {
+  border: 1px solid var(--hairline); border-radius: 14px;
+  background: var(--bg-surface); color: var(--text-1);
+  padding: 20px 22px; width: min(92vw, 400px);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .45);
+}
+.sheet::backdrop { background: rgba(0, 0, 0, .55); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.sheet-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+/* White in both themes, on purpose: a QR code is read by a camera, not an
+   eye, and a dark-on-dark code with a tinted quiet zone is what makes a phone
+   hunt for it. */
+.share-qr { background: #fff; padding: 12px; border-radius: 10px; width: fit-content; margin: 0 auto 14px; }
+.share-qr svg { display: block; width: min(64vw, 240px); height: auto; }
+.share-url { margin: 0 0 12px; text-align: center; font: 13px var(--mono); word-break: break-all; }
+.share-url a { color: var(--accent); }
+.share-hint { margin: 0 0 10px; color: var(--text-2); font-size: 13px; line-height: 1.5; }
+.share-hint:last-child { margin-bottom: 0; }
+.share-switch { justify-content: center; margin: 0 0 14px; padding-bottom: 0; }
+.share-warn { color: var(--accent); }
+.share-cmd {
+  margin: 0 0 12px; padding: 10px 12px; overflow-x: auto;
+  border: 1px solid var(--hairline); border-radius: 8px;
+  background: var(--bg-surface); color: var(--text-1);
+  font: 13px var(--mono);
+}

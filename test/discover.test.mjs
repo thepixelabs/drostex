@@ -11,7 +11,7 @@
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseRecords } from '../src/discover.mjs';
+import { parseRecords, isHostAddress } from '../src/discover.mjs';
 
 /*
  * A real answer to a PTR query for _wled._tcp.local, with the device identity
@@ -97,5 +97,26 @@ describe('parseRecords rejects junk without throwing', () => {
       Buffer.from('000c00010000000000020000', 'hex'),
     ]);
     assert.ok(Array.isArray(parseRecords(loop)));
+  });
+});
+
+describe('isHostAddress', () => {
+  test('an ordinary host on a /24 is a host', () => {
+    assert.equal(isHostAddress({ address: '192.168.1.20', netmask: '255.255.255.0' }), true);
+  });
+  test('the network address of a /24 is not (an idle Internet Sharing bridge reports one)', () => {
+    assert.equal(isHostAddress({ address: '192.168.194.0', netmask: '255.255.255.0' }), false);
+  });
+  test('the broadcast address of a /24 is not', () => {
+    assert.equal(isHostAddress({ address: '192.168.1.255', netmask: '255.255.255.0' }), false);
+  });
+  test('a /32 tunnel address is a host even though its host bits are zero', () => {
+    assert.equal(isHostAddress({ address: '10.8.0.2', netmask: '255.255.255.255' }), true);
+  });
+  test('a /31 point-to-point address is a host', () => {
+    assert.equal(isHostAddress({ address: '10.0.0.0', netmask: '255.255.255.254' }), true);
+  });
+  test('no netmask means nothing to judge by, so it passes', () => {
+    assert.equal(isHostAddress({ address: '192.168.1.20' }), true);
   });
 });

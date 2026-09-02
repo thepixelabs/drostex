@@ -2,14 +2,28 @@
 
 **[drostex.pixelabs.net](https://drostex.pixelabs.net)**
 
-Drostex is a local web studio for driving a **HyperCube Nano**, a WLED-based
-LED infinity-mirror cube. You run a small Node server on your own machine; it
-serves a UI in your browser and owns a UDP socket that streams computed
-pixels to the cube at 40fps by default (configurable up to 60).
+Drostex is a local web studio for driving a **Hyperspace HyperCube**, the
+WLED-based LED infinity-mirror cube, in any of its current sizes. You run a
+small Node server on your own machine; it serves a UI in your browser and
+owns a UDP socket that streams computed pixels to the cube at 40fps by
+default (configurable up to 60).
+
+> **Testers wanted: bigger cubes.** Everything here was built and measured
+> on one HyperCube Nano. The HyperCube10-SE and HyperCube15-SE are configured
+> from the vendor's own spec sheet (216 and 336 LEDs, 18 and 28 per edge) and
+> have never been run against a real unit. If you own one, `npm start` should
+> recognise it; then run `scripts/blink.mjs` and `scripts/diagnose.mjs` and
+> [open an issue](https://github.com/thepixelabs/drostex/issues) with what
+> lit up, even if the answer is "everything worked". See
+> [Supported cubes](#supported-cubes) for what's known about each.
 
 - **Proven.** HyperCube Nano, firmware `hs-2.0`, tested on one unit. 95
   effects at last count: `listEffects()` reads that from the device itself
   at runtime, so a different firmware build may report a different number.
+- **Configured, untested.** HyperCube10-SE and HyperCube15-SE, from the
+  vendor's LED counts. The streaming half should work as-is; how many of the
+  controller's addresses actually drive LEDs, and how the edges gang
+  together, nobody has measured. See [Supported cubes](#supported-cubes).
 - **Plausible, untested.** Streamed looks on any WLED device that accepts
   DRGB on UDP port 21324. Run `scripts/blink.mjs` against it first to
   confirm the protocol actually lands.
@@ -40,15 +54,76 @@ surprises you. **Save** it. Turn on **Auto-cycle** and walk away: it keeps
 working through your saved looks and the firmware's own effects with nobody
 at the keyboard.
 
-Two things you may want to change:
+Three things you may want to change:
 
 - **A different port.** `PORT=7848 npm start`.
 - **Don't auto-open a browser tab.** `npm start -- --no-open` (or
   `node server/index.mjs --no-open` directly).
+- **Use it from your phone.** The QR button in the top bar has a Remote
+  switch. See [Open it on your phone](#open-it-on-your-phone) for what
+  switching it on gives up.
 
 Requires Node 20 or newer. There are no runtime dependencies to install: see
 [How it works](#how-it-works) for why that's a deliberate constraint, not an
 accident.
+
+## Open it on your phone
+
+The top bar has a QR button, and behind it a **Remote** switch. Switch it
+on and the dialog shows a code for this machine's LAN address
+(`http://192.168.x.x:7847`); point a phone camera at it and the same UI
+opens there, no app to install. The code is generated in the page by
+`web/qr.mjs`, so this costs no dependency either.
+
+Remote is off at every start. Until it is on, the server listens on
+`127.0.0.1` only and a phone has no way to reach it. Switching it on adds
+a listener on each of this machine's LAN addresses, on the same port, and
+switching it off closes them again, dropping any phone that was
+connected. Nothing is written to disk, so the next start is back to this
+machine only. `npm start -- --lan` (or `DROSTEX_LAN=1`) starts with it
+already on, for a machine that only ever sits on a network you trust.
+
+What switching it on gives up is printed in the terminal each time: the
+server accepts requests whose `Host` is one of the addresses it is
+listening on, so anyone on the same network can drive the cube. There is
+no password. That is fine on a home Wi-Fi and a bad idea on a shared one,
+which is why it is a switch you flip for a session and not a setting that
+persists. Only a request from this machine can flip it: the phone gets
+the UI, not the say over whether the door stays open. The DNS-rebinding
+guard stays in force: only literal addresses are accepted, never
+hostnames. And the [no multi-user](#limitations) caveat applies exactly
+as it does to two tabs: the phone and the laptop both control the cube,
+and the last change wins.
+
+## Supported cubes
+
+The vendor sells three sizes on the same controller family. The counts of
+parts come from [hyperspacelight.com](https://hyperspacelight.com/pages/infinity-cube-led)
+and are in `src/models.mjs`; how the controller addresses those parts is a
+separate question that only measurement answers, and the **Status** column
+says which cube has had it.
+
+| Model | Size | LEDs | Per edge | Status | What the controller does |
+| --- | --- | --- | --- | --- | --- |
+| HyperCube Nano | 5.6 in | 132 | 11 | **Measured** | Reports 88 addresses, 44 drive LEDs, in blocks of 1, 2, 4 and 5 edges |
+| HyperCube10-SE | 10.15 in | 216 | 18 | Spec sheet only | Unknown. Assumed: every reported address is real |
+| HyperCube15-SE | 15.16 in | 336 | 28 | Spec sheet only | Unknown. Assumed: every reported address is real |
+
+On startup the server asks the cube for `/json/info`, matches what it says
+against that table (the Nano by the 88 addresses it reports, the others by
+LED count or product name) and prints what it decided and how sure it is.
+`device.model` in `config.json` overrides the guess. For a spec-sheet model
+the address count comes from the cube itself and `working` is assumed to
+equal it, which is the honest default until someone runs
+`scripts/diagnose.mjs` on one: on the Nano that assumption would have been
+wrong by a factor of two. Anything you measure goes in `leds.*` and beats
+the table.
+
+The older, non-SE HyperCube 10 and 15 are not in the table. Their manual
+describes a different controller (two LED tracks, two sACN universes,
+xLights-style pixel mapping) and nothing here has been tried against one;
+if you have one and `scripts/blink.mjs` gets a response, that's worth an
+issue too.
 
 ## Finding and configuring your device
 
@@ -79,16 +154,23 @@ device. Field by field:
   It is not the name shown in the page header: that comes from the cube's
   own `/json/info` at runtime (or from renaming it inside the app, see
   [Using it](#using-it)), so the two can legitimately differ.
+- **`device.model`.** `auto` (the default), `nano`, `hc10-se` or `hc15-se`.
+  `auto` asks the cube and matches the answer against
+  [Supported cubes](#supported-cubes); set it by hand if that guesses wrong
+  or the cube is off when the server starts.
 - **`transport.*`.** Protocol and ports. The defaults (`wled-drgb` on UDP
   `21324`, sACN on `5568` universe `1`) are what was measured working on
   the Nano; see
   [What was measured, not documented](#what-was-measured-not-documented).
   You shouldn't need to touch these unless you're on different firmware.
-- **`leds.*`.** `count` (addresses the controller reports), `working`
-  (addresses that actually drive an LED), `perEdge`. The defaults are `88`,
-  `44`, and `11`, measured on the Nano. If you're on a different unit, see
-  [`docs/hardware-probing.md`](docs/hardware-probing.md) to find your own
-  numbers before trusting anything Drostex computes against them.
+- **`leds.*`.** Optional overrides: `count` (addresses the controller
+  reports), `working` (addresses that actually drive an LED), `perEdge`, and
+  `blocks` (edges driven by each address block, `[1, 2, 4, 5]` on the Nano).
+  Leave them out and the model table plus the cube's own report fill them
+  in. Anything you set here wins, which is the point: it's where a number
+  you measured on your own unit goes. See
+  [`docs/hardware-probing.md`](docs/hardware-probing.md) for how to find
+  them before trusting anything Drostex computes against them.
 
 If `config.json` still doesn't exist and discovery finds nothing either,
 the server and scripts fall back to `config.example.json`'s placeholder
@@ -347,15 +429,20 @@ was extracted.
 
 What is in scope, and what is not.
 
-- **One product.** Built and tested against a HyperCube Nano on firmware
-  `hs-2.0`, the build that reports the 95 effects mentioned above. See the
-  claim ladder at the top of this file for what's expected to work on
-  other WLED gear, and what almost certainly won't.
+- **One product line, one measured unit.** Built and tested against a
+  HyperCube Nano on firmware `hs-2.0`, the build that reports the 95 effects
+  mentioned above. The 10-SE and 15-SE are configured from the vendor's
+  spec sheet and nobody has run one; see [Supported cubes](#supported-cubes)
+  and the claim ladder at the top of this file for what's expected to work
+  on other WLED gear, and what almost certainly won't.
 - **One device at a time.** There's a single `Renderer`, a single UDP
   socket, one configured host.
 - **No authentication.** Binds to `127.0.0.1` only, and checks the
-  request's `Host` header on every request. That's a guard, not a security
-  model. Do not expose this to a network.
+  request's `Host` header on every request. The Remote switch widens both
+  to this machine's own LAN addresses so a phone can open it, and nothing
+  else: see [Open it on your phone](#open-it-on-your-phone). That's a
+  guard, not a security model. Do not expose this beyond a network you
+  trust.
 - **No multi-user support.** Two browser tabs pointed at the same server
   will fight. There's no locking, so whichever poll lands last quietly
   wins, and the other tab keeps showing stale state until its own next

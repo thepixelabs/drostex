@@ -259,7 +259,7 @@ async function main() {
 
   if (SKIP_PROBE) {
     console.log('\nSkipping transport probe (--skip-probe), using WLED DRGB.\n');
-    await walkRuns('wled', n, 11, HOLD_MS);
+    await walkRuns('wled', n, CONFIG.perEdge, HOLD_MS);
     return;
   }
 
@@ -288,7 +288,7 @@ async function main() {
   console.log('─'.repeat(60));
 
   if (RUNS) {
-    await walkRuns(key, n, 11, HOLD_MS);
+    await walkRuns(key, n, CONFIG.perEdge, HOLD_MS);
     return;
   }
 
@@ -333,14 +333,15 @@ function senderFor(key) {
 }
 
 /**
- * Lights one 11-LED run at a time, holding each for a few seconds.
+ * Lights one edge-length run at a time, holding each for a few seconds.
  *
- * This is the CLI ancestor of the mapping wizard. 88 logical pixels / 11 per
- * edge = 8 runs. If the cube has 12 glowing edges but only 8 runs, then some
- * runs must drive two edges at once — watching this walk is what tells us
- * which pairs are ganged.
+ * This is the CLI ancestor of the mapping wizard. On the Nano, 88 logical
+ * pixels / 11 per edge = 8 runs. If the cube has 12 glowing edges but only 8
+ * runs, then some runs must drive two edges at once — watching this walk is
+ * what tells us which pairs are ganged. The run length is the model's LEDs
+ * per edge (src/models.mjs), or leds.perEdge from config.json.
  */
-async function walkRuns(key, n, perEdge = 11, holdMs = 5000) {
+async function walkRuns(key, n, perEdge = CONFIG.perEdge, holdMs = 5000) {
   const { port, build } = senderFor(key);
   const { sock } = await openSocket(port);
   const runs = Math.ceil(n / perEdge);

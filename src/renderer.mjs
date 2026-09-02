@@ -29,7 +29,7 @@ export class Renderer {
     // Global playback settings. sparkle, symmetry and audio reactivity live
     // here rather than per-animation: they are modifiers over whatever is
     // playing, exactly like the firmware's own versions - except these actually
-    // reach the 44 addresses that have physical LEDs behind them.
+    // reach the addresses that have physical LEDs behind them.
     // Sparkle and symmetry deliberately live on the DEVICE, not here. The
     // firmware applies both to streamed pixels, and its symmetry modes know the
     // cube's real geometry - Cubic, Helical, Trigonal - which we never mapped.
@@ -43,8 +43,9 @@ export class Renderer {
     // realtime data replaces the buffer afterwards - so none of it survives on
     // streamed pixels. The earlier belief that sparkle did survive came from
     // watching the cube's reported power draw fluctuate, but that estimate
-    // covers all 88 configured addresses while only the first 44 have LEDs
-    // behind them: the firmware was sparkling into pixels that do not exist.
+    // covers every configured address while, on the Nano, only the first 44
+    // of 88 have LEDs behind them: the firmware was sparkling into pixels
+    // that do not exist.
     this.params = { brightness: 0.85, speed: 1, fps: 40, gamma: 2.2, symmetry: 'none', sparkle: 0 };
     // The device's own brightness before we touched it. Streaming needs the
     // device at 255 (realtime pixels are scaled by it), but that is OUR
@@ -154,7 +155,9 @@ export class Renderer {
       if (!def) continue;
       if (def.type === 'number') {
         const n = Number(v);
-        if (Number.isFinite(n)) cur[k] = Math.min(def.max ?? n, Math.max(def.min ?? n, n));
+        // 'working' is the schema's way of saying "this cube's address count".
+        const max = def.max === 'working' ? this.config.working : def.max;
+        if (Number.isFinite(n)) cur[k] = Math.min(max ?? n, Math.max(def.min ?? n, n));
       } else if (def.type === 'boolean') {
         cur[k] = Boolean(v);
       } else if (def.type === 'select') {

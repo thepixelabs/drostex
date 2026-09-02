@@ -48,6 +48,16 @@
     <canvas id="sparkline" width="120" height="22" aria-label="Power draw over time"></canvas>
     <span class="draw" id="device-power">&mdash;</span>
     <span class="build" id="build" title="Build of the page you are viewing"></span>
+    <!-- The Remote switch, and a QR code of this server's LAN address once it
+         is on, so a phone can open the same UI. Off at every start: until it
+         is switched on there is nothing a phone can reach, and the dialog
+         says so rather than showing a code for 127.0.0.1. -->
+    <button type="button" class="icon-btn" id="share" title="Open on your phone" aria-label="Open on your phone" aria-haspopup="dialog">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+        <path d="M14 14h3v3h-3zM18 18h3v3h-3zM21 14v1M14 21h1"/>
+      </svg>
+    </button>
     <!-- Three states rather than a toggle: "system" has to be reachable, and a
          two-way switch cannot express it. -->
     <div class="theme-switch" id="theme-switch" role="group" aria-label="Colour theme">
@@ -278,6 +288,16 @@
     <div class="grid grid-dense" id="effects" aria-label="Built-in effects" data-cat="builtin"></div>
   </section>
 </main>
+
+<dialog class="sheet" id="share-dialog" aria-labelledby="share-title">
+  <div class="sheet-head">
+    <h2 id="share-title">Open on your phone</h2>
+    <button type="button" class="icon-btn" id="share-close" aria-label="Close">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+  <div id="share-body"></div>
+</dialog>
 
 <script src="/app.js" type="module"></script>
 </body>

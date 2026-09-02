@@ -21,17 +21,35 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { exec } from 'node:child_process';
-import { loadConfig } from '../scripts/lib/config.mjs';
+import { loadConfig, resolveHardware } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
-import { ANIMATIONS, PALETTES, iq, SYMMETRY_NAMES } from '../src/animations.mjs';
+import { ANIMATIONS, PALETTES, iq, SYMMETRY_NAMES, resolveSchema } from '../src/animations.mjs';
 import { Cycler, POOLS } from '../src/cycler.mjs';
 import { paletteStops } from '../src/device-palettes.mjs';
-import { discover } from '../src/discover.mjs';
+import { discover, localAddresses } from '../src/discover.mjs';
 import { setDeviceName } from '../src/device-name.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
 const PORT = Number(process.env.PORT ?? 7847);
+/**
+ * Remote: whether a phone on the network can reach the UI.
+ *
+ * Off at every start, and switched from the page rather than the terminal.
+ * The loopback listener never goes away; switching Remote on adds a listener
+ * on each of this machine's LAN addresses, on the same port, and switching it
+ * off closes them again along with every connection they accepted. Nothing
+ * persists: a restart is back to this machine only, because Remote changes
+ * who can control the cube from "this computer" to "anyone on the Wi-Fi",
+ * with no password in between. --lan (or DROSTEX_LAN=1) starts with it
+ * already on, for a machine that only ever sits on a network you trust.
+ *
+ * Only a request from a loopback socket may flip it. The phone gets the UI;
+ * it does not get to decide whether the door stays open.
+ */
+const START_REMOTE = process.argv.includes('--lan') || process.env.DROSTEX_LAN === '1';
+const remote = new Map(); // LAN address -> the http.Server listening on it
+const remoteOn = () => remote.size > 0;
 
 /**
  * Resolves the device address, looking on the network if nobody named one.
@@ -60,7 +78,11 @@ async function resolveConfig() {
   return loadConfig({ host: pick.host });
 }
 
-const CONFIG = await resolveConfig();
+// Then ask the cube what it is. One /json/info with a short timeout settles
+// the model, the address count and the LEDs per edge before the renderer
+// sizes its buffer; a cube that is off right now just leaves the config as
+// config.json and the model table had it.
+const CONFIG = await resolveHardware(await resolveConfig());
 const renderer = new Renderer(CONFIG);
 
 /**
@@ -122,6 +144,7 @@ const cycler = new Cycler({
 const BUILD = createHash('sha1')
   .update(await readFile(join(ROOT, 'web/app.js')))
   .update(await readFile(join(ROOT, 'web/cube.mjs')))
+  .update(await readFile(join(ROOT, 'web/qr.mjs')))
   .update(await readFile(join(ROOT, 'web/index.html')))
   .update(await readFile(join(ROOT, 'web/style.css')))
   .digest('hex').slice(0, 8);
@@ -219,13 +242,96 @@ async function serveStatic(req, res) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+const LOOPBACK_SOCKETS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * Whether a Host header names this machine.
+ *
+ * Loopback always does. With Remote on, so does each LAN address that has a
+ * listener right now, which is what a phone on the network sends. Only
+ * literal addresses, never a hostname: a DNS name an attacker controls can be
+ * pointed at us, but 192.168.1.20 cannot be made to mean anything other than
+ * what it is.
+ */
+function hostIsUs(host) {
+  return LOOPBACK.has(host) || remote.has(host);
+}
+
+/** Whether the request came in over loopback, which no header can fake. */
+const fromThisMachine = (req) => LOOPBACK_SOCKETS.has(req.socket.remoteAddress);
+
+/**
+ * The addresses worth putting in front of a phone, most likely first.
+ *
+ * A laptop often has several: the Wi-Fi one, a VPN, a container bridge, a
+ * link-local leftover. The phone is on the same network as the cube, so the
+ * address that shares the cube's /24 wins outright; after that home-router
+ * ranges rank ahead of the rest and 169.254 goes last. Without that first
+ * rule a machine with a few VPN tunnels in 192.168.x showed whichever the
+ * OS listed first, which was right only by luck.
+ */
+function shareAddresses() {
+  const subnet = (a) => a.split('.').slice(0, 3).join('.');
+  const cube = subnet(CONFIG.host ?? '');
+  const rank = (a) => (subnet(a) === cube ? -1
+    : a.startsWith('192.168.') ? 0
+    : a.startsWith('10.') ? 1
+    : /^172\.(1[6-9]|2\d|3[01])\./.test(a) ? 2
+    : a.startsWith('169.254.') ? 9 : 5);
+  return [...localAddresses()].sort((a, b) => rank(a) - rank(b));
+}
+
+/** What a phone should scan: the addresses with a listener, most likely first. */
+const remoteUrls = () => shareAddresses().filter((a) => remote.has(a)).map((a) => `http://${a}:${PORT}`);
+
+/**
+ * Switches Remote on: one listener per LAN address, sharing the loopback
+ * server's handler. An address that refuses to bind is reported rather than
+ * fatal, so a VPN interface cannot take the Wi-Fi one down with it.
+ */
+async function openRemote() {
+  const problems = [];
+  for (const addr of shareAddresses()) {
+    if (remote.has(addr)) continue;
+    const s = http.createServer(handle);
+    try {
+      await new Promise((resolve, reject) => {
+        s.once('error', reject);
+        s.listen(PORT, addr, () => { s.off('error', reject); resolve(); });
+      });
+      s.on('error', (e) => console.error(`  ! Remote listener on ${addr}: ${e.message}`));
+      remote.set(addr, s);
+    } catch (e) {
+      problems.push(`${addr}: ${e.code ?? e.message}`);
+    }
+  }
+  if (!remote.size && !problems.length) problems.push('No network address found on this computer. Is it on Wi-Fi?');
+  if (remote.size) {
+    console.log(`\n  Remote  on: ${remoteUrls().join(', ')}`);
+    console.log(`          anyone on this network can control the cube. No password.\n`);
+  }
+  return problems;
+}
+
+/** Switches Remote off: stops accepting, then drops every open connection. */
+async function closeRemote() {
+  const servers = [...remote.values()];
+  remote.clear();
+  await Promise.all(servers.map((s) => new Promise((resolve) => {
+    s.close(() => resolve());
+    s.closeAllConnections();
+  })));
+  if (servers.length) console.log(`\n  Remote  off: this computer only.\n`);
+}
+
+const handle = async (req, res) => {
   const url = new URL(req.url, 'http://x');
   const p = url.pathname;
 
-  // DNS-rebinding guard: only accept loopback Hosts.
+  // DNS-rebinding guard: only accept Hosts that name this machine.
   const host = (req.headers.host ?? '').split(':')[0];
-  if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(host)) {
+  if (!hostIsUs(host)) {
     res.writeHead(403); return res.end('forbidden host');
   }
 
@@ -275,11 +381,33 @@ const server = http.createServer(async (req, res) => {
         },
         config: {
           host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge,
+          // Which model, how sure, and how its edges gang together, so the
+          // preview draws this cube rather than the one this was written on.
+          model: CONFIG.model, modelName: CONFIG.modelName, modelStatus: CONFIG.modelStatus,
+          blocks: CONFIG.blocks,
           symmetries: SYMMETRY_NAMES,
         },
         online: Boolean(dev),
+        remote: remoteOn(),
         build: BUILD,
       });
+    }
+
+    if (p === '/api/share') {
+      // The Remote switch. GET reports it; POST {on} flips it, and only from
+      // a loopback socket: the phone gets the UI, not the say over whether
+      // the door stays open. Literal addresses, not a hostname: they are what
+      // the Host guard accepts, and they need no mDNS on the phone.
+      let problems = [];
+      if (req.method === 'POST') {
+        if (!fromThisMachine(req)) {
+          return json(res, 403, { error: 'Only the computer running Drostex can switch Remote on or off.' });
+        }
+        const { on } = await readBody(req);
+        if (on) problems = await openRemote();
+        else await closeRemote();
+      }
+      return json(res, 200, { on: remoteOn(), port: PORT, urls: remoteUrls(), problems });
     }
 
     if (p === '/api/discover') {
@@ -309,7 +437,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/animations') {
       return json(res, 200, Object.entries(ANIMATIONS).map(([id, a]) => ({
         id, label: a.label ?? id, desc: a.desc ?? '',
-        params: a.params ?? {},
+        // Sized to this cube: a slider that says "LEDs" tops out at however
+        // many this one has, not at a number measured on another.
+        params: resolveSchema(a.params, CONFIG),
         values: renderer.animParams[id],
         swatch: a.swatch ?? null,
       })));
@@ -510,7 +640,9 @@ const server = http.createServer(async (req, res) => {
   } catch (e) {
     return json(res, 500, { error: String(e.message ?? e) });
   }
-});
+};
+
+const server = http.createServer(handle);
 
 server.on('error', (e) => {
   if (e.code === 'EADDRINUSE') {
@@ -529,12 +661,22 @@ server.on('error', (e) => {
 // play, which cannot happen before the server is up anyway.
 renderer.captureFromDevice();
 
-server.listen(PORT, '127.0.0.1', () => {
+server.listen(PORT, '127.0.0.1', async () => {
   const url = `http://127.0.0.1:${PORT}`;
   console.log(`\n  Drostex\n`);
   console.log(`  UI      ${url}`);
   console.log(`  Device  ${CONFIG.name ?? CONFIG.host} @ ${CONFIG.host}`);
-  console.log(`  Pixels  ${CONFIG.working} addressable, ${CONFIG.perEdge} per edge\n`);
+  const sure = CONFIG.modelStatus === 'measured' ? 'measured'
+    : CONFIG.modelStatus === 'spec-sheet' ? 'from the spec sheet, untested'
+    : 'unknown model';
+  console.log(`  Model   ${CONFIG.modelName ?? 'not recognised'} (${sure})`);
+  console.log(`  Pixels  ${CONFIG.working} of ${CONFIG.ledCount} addresses drive LEDs, ${CONFIG.perEdge} per edge\n`);
+  for (const note of CONFIG.notes) console.log(`  ! ${note}\n`);
+  if (START_REMOTE) {
+    for (const problem of await openRemote()) console.log(`  ! Remote: ${problem}\n`);
+  } else {
+    console.log(`  Phone   the QR button in the top bar switches Remote on for this run\n`);
+  }
   console.log(`  Ctrl-C to stop.\n`);
   if (!process.argv.includes('--no-open')) {
     const open = process.platform === 'darwin' ? 'open'
@@ -550,6 +692,7 @@ process.on('SIGINT', async () => {
   console.log('\n  Stopping…');
   cycler.stopTimer();
   await renderer.stop();
+  for (const r of remote.values()) r.close();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 1500);
 });

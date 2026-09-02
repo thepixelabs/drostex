@@ -3,7 +3,9 @@
   "device": {
     "host": "192.168.1.50",
     "mac": null,
-    "name": "My HyperCube"
+    "name": "My HyperCube",
+    "$comment": "model: auto | nano | hc10-se | hc15-se. auto asks the cube and matches it against src/models.mjs; set it by hand if that guesses wrong.",
+    "model": "auto"
   },
   "transport": {
     "$comment": "Measured on a HyperCube Nano (hs-2.0): DDP and Art-Net ports are closed; WLED DRGB and sACN universe 1 both work. Run scripts/blink.mjs to probe your own device.",
@@ -13,9 +15,6 @@
     "sacnUniverse": 1
   },
   "leds": {
-    "$comment": "Device reports 88 addresses but only the first 44 drive anything. Run scripts/diagnose.mjs to find yours.",
-    "count": 88,
-    "working": 44,
-    "perEdge": 11
+    "$comment": "Optional overrides; anything set here beats the model table and the cube's own report. The Nano reports 88 addresses but only the first 44 drive anything, so on a cube nobody has probed yet run scripts/diagnose.mjs and set working to what you find. count: addresses the controller reports. working: addresses that drive an LED. perEdge: LEDs per edge. blocks: edges driven by each address block, e.g. [1, 2, 4, 5]."
   }
 }

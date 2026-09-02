@@ -135,12 +135,36 @@ function query(name, type) {
   ]);
 }
 
-/** Every non-internal IPv4 interface, so a multi-homed machine still finds things. */
-function interfaces() {
+const toInt = (ip) => ip.split('.').reduce((n, o) => ((n << 8) >>> 0) + (Number(o) & 255), 0) >>> 0;
+
+/**
+ * Whether an interface entry is a host, rather than one of the two addresses
+ * in a subnet that name the subnet itself: host bits all zero (the network)
+ * or all one (broadcast). An idle macOS Internet Sharing bridge reports its
+ * network address (…194.0) as if it were its own; binding to it works and
+ * nothing ever arrives, so offered to a phone it is a dead QR. A /31 or /32,
+ * which is what a VPN tunnel usually has, has no such addresses and is
+ * always a host. Exported for the tests; the OS hands us the entries.
+ */
+export function isHostAddress({ address, netmask }) {
+  if (!address || !netmask) return Boolean(address);
+  const ip = toInt(address), mask = toInt(netmask);
+  const hostMask = (~mask) >>> 0;
+  if (hostMask <= 1) return true;
+  const host = (ip & hostMask) >>> 0;
+  return host !== 0 && host !== hostMask;
+}
+
+/**
+ * Every non-internal IPv4 host address this machine has, so a multi-homed
+ * machine still finds things. Exported because the server needs the same list
+ * for the opposite direction: which addresses a phone may use to reach it.
+ */
+export function localAddresses() {
   const out = [];
   for (const addrs of Object.values(os.networkInterfaces())) {
     for (const a of addrs ?? []) {
-      if (a.family === 'IPv4' && !a.internal) out.push(a.address);
+      if (a.family === 'IPv4' && !a.internal && isHostAddress(a)) out.push(a.address);
     }
   }
   return out;
@@ -253,7 +277,7 @@ function sweepForDevices(timeout) {
       // Then each interface explicitly. On a laptop with Wi-Fi, a VPN and a
       // few Docker bridges up, the default route is regularly not the one the
       // cube is on.
-      for (const nic of interfaces()) {
+      for (const nic of localAddresses()) {
         if (done) return;
         await sendOnce(nic);
       }

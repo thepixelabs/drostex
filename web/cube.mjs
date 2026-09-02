@@ -6,19 +6,22 @@
  * come from /api/pixels, which is the last buffer handed to the UDP socket. If
  * the preview and the object disagree, the bug is downstream of here.
  *
- * The wiring is branching-parallel and the fan-out is UNEVEN. One data line
- * enters on an edge and splits at corners; every edge downstream of a split
- * carries the same signal and therefore always shows the same colour. Measured
- * on the real unit (profiles/nano-topology.json), the four address blocks
- * drive 1, 2, 4 and 5 edges respectively, which sums to 12 edges and 132 LEDs.
+ * On the Nano the wiring is branching-parallel and the fan-out is UNEVEN. One
+ * data line enters on an edge and splits at corners; every edge downstream of
+ * a split carries the same signal and therefore always shows the same colour.
+ * Measured on the real unit (profiles/nano-topology.json), the four address
+ * blocks drive 1, 2, 4 and 5 edges respectively, which sums to 12 edges.
  *
  * That is why there is no single "LEDs per address" number. An earlier guess
  * of 3 came from dividing 132 by 44, and the hardware does not agree with it.
  *
- * What is still unknown is WHICH edges belong to which block. The counts are
- * measured; the assignment below is nominal, chosen to be stable rather than
- * true. So read this as "what the frame looks like and how many edges move
- * together", never as "which corner is lit".
+ * Which blocks drive how many edges arrives from the server with the rest of
+ * the geometry (src/models.mjs), because it is a fact about one model, not
+ * about cubes. A model nobody has probed yet gets an even split, so it still
+ * previews as something. What is unknown on every model is WHICH edges belong
+ * to which block: the counts are measured, the assignment is nominal, chosen
+ * to be stable rather than true. So read this as "what the frame looks like
+ * and how many edges move together", never as "which corner is lit".
  *
  * It follows that this is only honest while WE are the pixel source. When a
  * firmware effect is running the server has no idea what the LEDs are doing,
@@ -60,24 +63,21 @@ const BASIS = V.map((p) => [
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
 /**
- * Edges driven by each address block, measured on a HyperCube Nano.
- *
- * Sums to 12. The unevenness is the whole point: a moving dot appears on one
- * edge in block 0 and on five at once in block 3, which is a visible property
- * of the object and the reason per-edge independent control does not exist.
- */
-const NANO_BLOCK_EDGES = [1, 2, 4, 5];
-
-/**
  * Maps each edge index to the address block driving it.
  *
- * Falls back to an even split for any geometry that is not the Nano's, so a
- * differently wired device still previews as something rather than nothing.
+ * `measured` is the per-block edge count from the server (on the Nano,
+ * [1, 2, 4, 5]: the unevenness is the whole point, a moving dot appears on one
+ * edge in block 0 and on five at once in block 3, which is a visible property
+ * of the object and the reason per-edge independent control does not exist).
+ * It is only trusted when it accounts for every edge. Anything else, including
+ * a model nobody has probed, gets an even split, so a differently wired device
+ * still previews as something rather than nothing.
  */
-function edgeBlocks(blocks, edgeCount) {
-  const sizes = (blocks === NANO_BLOCK_EDGES.length
-    && edgeCount === NANO_BLOCK_EDGES.reduce((a, b) => a + b, 0))
-    ? NANO_BLOCK_EDGES
+function edgeBlocks(blocks, edgeCount, measured) {
+  const sizes = (Array.isArray(measured)
+    && measured.length === blocks
+    && measured.reduce((a, b) => a + b, 0) === edgeCount)
+    ? measured
     : Array.from({ length: blocks }, (_, i) =>
       Math.floor((edgeCount * (i + 1)) / blocks) - Math.floor((edgeCount * i) / blocks));
 
@@ -95,6 +95,7 @@ export class CubePreview {
     this.live = false;
     this.perEdge = 11;
     this.working = 44;
+    this.blocks = null;                    // measured edges per block, if any
     this.gamma = 2.2;                      // matches the renderer's default
     this.yaw = 0;
     this.raf = null;
@@ -122,9 +123,10 @@ export class CubePreview {
   }
 
   /** Geometry comes from the server's config, not from constants here. */
-  setGeometry({ working, perEdge }) {
+  setGeometry({ working, perEdge, blocks } = {}) {
     if (Number.isFinite(working) && working > 0) this.working = working;
     if (Number.isFinite(perEdge) && perEdge > 0) this.perEdge = perEdge;
+    this.blocks = Array.isArray(blocks) ? blocks : null;
   }
 
   /**
@@ -215,7 +217,7 @@ export class CubePreview {
     const w = canvas.width, h = canvas.height;
     const dpr = this.dpr || 1;
     const blocks = Math.max(1, Math.round(this.working / this.perEdge));
-    const blockOf = edgeBlocks(blocks, E.length);
+    const blockOf = edgeBlocks(blocks, E.length, this.blocks);
 
     ctx.clearRect(0, 0, w, h);
     ctx.save();

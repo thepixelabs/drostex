@@ -138,7 +138,7 @@ export const ANIMATIONS = {
     label: 'Comet',
     desc: 'a bright head with an exponential tail, orbiting the cube',
     params: {
-      tail: num('Tail length', 12, 1, 44, 1, 'LEDs'),
+      tail: num('Tail length', 12, 1, 'working', 1, 'LEDs'),
       glow: num('Glow', 0.6, 0, 1, 0.01, 'soft halo around the head'),
       hue: num('Hue', 0.55, 0, 1),
       hueShift: num('Hue shift', 0.4, 0, 1, 0.01, 'colour change as it orbits'),
@@ -431,6 +431,21 @@ export const SYMMETRIES = {
   },
 };
 export const SYMMETRY_NAMES = Object.keys(SYMMETRIES);
+
+/**
+ * Resolves a parameter schema against the cube it will run on.
+ *
+ * A `max` of `'working'` means "however many addresses this cube has", which
+ * no static table can know: a tail of 44 LEDs is the whole loop on a Nano and
+ * an eighth of it on a HyperCube15-SE. Everything else passes through.
+ */
+export function resolveSchema(schema, { working }) {
+  return Object.fromEntries(Object.entries(schema ?? {}).map(([k, d]) => {
+    if (d.max !== 'working') return [k, d];
+    const max = Math.max(d.min ?? 1, Number(working) || 1);
+    return [k, { ...d, max, default: Math.min(d.default, max) }];
+  }));
+}
 
 /** Per-address context. `perEdge` makes `e` wrap at every corner. */
 export function makeContext(i, n, perEdge, t, speed, p) {

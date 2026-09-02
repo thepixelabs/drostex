@@ -15,6 +15,7 @@
  */
 
 import { CubePreview } from './cube.mjs';
+import { encode as encodeQR, toSVG as qrSVG } from './qr.mjs';
 
 const $ = (id) => document.getElementById(id);
 
@@ -527,7 +528,7 @@ function bindSeg(id, onPick) {
 bindSeg('fx-sparkle', (v) => api('device/state', { sparkle: Number(v) }));
 
 // Ours, for streamed animations. Continuous rather than the firmware's three
-// steps, and it actually reaches the 44 addresses that have LEDs behind them.
+// steps, and it actually reaches the addresses that have LEDs behind them.
 (() => {
   const el = $('sparkle-studio');
   el.addEventListener('input', () => {
@@ -1140,6 +1141,7 @@ function setOffline(off, title, detail) {
 async function poll() {
   try {
     const s = await api('status');
+    $('share')?.classList.toggle('on', Boolean(s.remote));
 
     // The page is older than the server it is talking to. Say exactly that,
     // instead of letting the resulting 404s look like a missing cube.
@@ -1402,6 +1404,84 @@ async function pumpPreview() {
 }
 // 100ms against our own local server, not the cube. This is a loopback HTTP
 // call that reads a Buffer already in memory, so it costs the ESP32 nothing.
+/**
+ * Open on your phone: the Remote switch, and a QR code of this server's LAN
+ * address once it is on.
+ *
+ * The server knows its interfaces; the page knows how to draw. So the dialog
+ * asks /api/share each time it opens and renders whatever comes back, which
+ * also means a laptop that changed Wi-Fi gets the new address from a flick of
+ * the switch, without a restart. The switch only works from the computer
+ * running the server (the server refuses it from anywhere else), so a phone
+ * sees the code and the state, not the control.
+ */
+(() => {
+  const dialog = $('share-dialog');
+  const body = $('share-body');
+  const button = $('share');
+  if (!dialog || !body || !button) return;
+  const esc = (v) => String(v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const thisMachine = ['localhost', '127.0.0.1', '[::1]'].includes(location.hostname);
+
+  function render(share) {
+    button.classList.toggle('on', Boolean(share.on));
+    const [url, ...others] = share.urls ?? [];
+    const problems = share.problems?.length
+      ? `<p class="share-hint share-warn">${share.problems.map(esc).join('<br>')}</p>` : '';
+    const control = thisMachine ? `
+      <label class="switch share-switch">
+        <input type="checkbox" id="share-on"${share.on ? ' checked' : ''}>
+        <span>Remote ${share.on ? 'on' : 'off'}</span>
+      </label>` : '';
+    if (!share.on) {
+      body.innerHTML = `
+        ${control}
+        <p class="share-hint">Drostex is only listening on this computer. Switch Remote on and a phone on the same Wi-Fi can open this page from a QR code.</p>
+        <p class="share-hint">While it is on, anyone on this network can control the cube, with no password. It is off again when you switch it off or stop the server.</p>
+        ${thisMachine ? '' : '<p class="share-hint">Only the computer running Drostex can switch it on.</p>'}
+        ${problems}`;
+    } else if (!url) {
+      body.innerHTML = `
+        ${control}
+        <p class="share-hint">Remote is on, but this computer has no network address right now. Check its Wi-Fi, then switch Remote off and on again.</p>
+        ${problems}`;
+    } else {
+      body.innerHTML = `
+        ${control}
+        <div class="share-qr">${qrSVG(encodeQR(url))}</div>
+        <p class="share-url"><a href="${esc(url)}">${esc(url)}</a></p>
+        <p class="share-hint">Point the phone's camera at it. The phone has to be on the same network as this computer. Your phone and this tab both control the cube, and the last change wins.</p>
+        ${others.length ? `<p class="share-hint">Other addresses this machine has: ${others.map(esc).join(', ')}.</p>` : ''}
+        ${problems}`;
+    }
+    $('share-on')?.addEventListener('change', async (e) => {
+      const on = e.target.checked;
+      e.target.disabled = true;
+      try {
+        render(await api('share', { on }));
+      } catch (err) {
+        render({ ...share, problems: [`Could not switch Remote ${on ? 'on' : 'off'} (${err.message}).`] });
+      }
+    });
+  }
+
+  async function open() {
+    body.innerHTML = '<p class="share-hint">Asking the server&hellip;</p>';
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+    try {
+      render(await api('share'));
+    } catch (e) {
+      body.innerHTML = `<p class="share-hint">Could not reach the server (${esc(e.message)}).</p>`;
+    }
+  }
+
+  button.addEventListener('click', open);
+  $('share-close')?.addEventListener('click', () => dialog.close());
+  // A click on the backdrop lands on the dialog element itself, not its children.
+  dialog.addEventListener('click', (e) => { if (e.target === dialog) dialog.close(); });
+})();
+
 setInterval(pumpPreview, 100);
 
 await poll();

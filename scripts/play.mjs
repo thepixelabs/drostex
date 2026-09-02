@@ -11,7 +11,7 @@
  *   node scripts/play.mjs comet --fps=40 --bri=0.7 --speed=1.5
  */
 
-import { loadConfig } from './lib/config.mjs';
+import { loadConfig, resolveHardware } from './lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
 import { ANIMATIONS } from '../src/animations.mjs';
 
@@ -40,7 +40,7 @@ async function main() {
     return;
   }
 
-  const config = loadConfig();
+  const config = await resolveHardware(loadConfig());
   const renderer = new Renderer(config);
   renderer.setParams({
     brightness: flag('bri', 0.85),
@@ -50,8 +50,10 @@ async function main() {
   });
 
   console.log(`\n  ${name} — ${ANIMATIONS[name].desc}`);
-  console.log(`  ${config.working} addresses @ ${renderer.params.fps}fps, ` +
+  console.log(`  ${config.modelName ?? 'unknown model'}: ${config.working} addresses, ` +
+              `${config.perEdge} per edge @ ${renderer.params.fps}fps, ` +
               `brightness ${renderer.params.brightness}, speed ${renderer.params.speed}`);
+  for (const note of config.notes) console.log(`  ! ${note}`);
   console.log('  Ctrl-C to stop.\n');
 
   await renderer.play(name);

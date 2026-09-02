@@ -20,9 +20,10 @@
  * happens to be answering on the network today.
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { resolveModel, applyModel } from '../../src/models.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -73,7 +74,19 @@ export function loadConfig({ host: override = null } = {}) {
     );
   }
 
-  return {
+  const modelKey = file.device?.model ?? 'auto';
+  // Anything set here was measured by the owner and beats the model table.
+  // `working` is the one most worth setting: only the first N addresses drive
+  // physical LEDs on the Nano; the rest are configured with no tap behind
+  // them, and writing past N is harmless but useless.
+  const ledsOverride = {
+    count: file.leds?.count ?? null,
+    working: file.leds?.working ?? null,
+    perEdge: file.leds?.perEdge ?? null,
+    blocks: Array.isArray(file.leds?.blocks) ? file.leds.blocks : null,
+  };
+
+  const base = {
     host,
     source,
     port: file.transport?.port ?? DEFAULTS.port,
@@ -82,10 +95,39 @@ export function loadConfig({ host: override = null } = {}) {
     sacnUniverse: file.transport?.sacnUniverse ?? DEFAULTS.sacnUniverse,
     mac: file.device?.mac ?? null,
     name: file.device?.name ?? null,
-    ledCount: file.leds?.count ?? 88,
-    // Only the first N addresses drive physical LEDs; the rest are configured
-    // by the vendor but have no tap. Writing past this is harmless but useless.
-    working: file.leds?.working ?? 44,
-    perEdge: file.leds?.perEdge ?? 11,
+    modelKey,
+    ledsOverride,
   };
+
+  // Synchronous answer: what config.json and the model table know without
+  // asking the cube. `resolveHardware` refines it once the cube has answered,
+  // which is what the server and the player do; the probe scripts run on
+  // this, because measuring the hardware is the whole point of them.
+  return applyModel(base, { model: resolveModel({ key: modelKey }) });
+}
+
+/**
+ * Asks the cube what it is, and settles the LED numbers against it.
+ *
+ * One request to `/json/info` with a short timeout. A cube that does not
+ * answer leaves the synchronous config untouched, plus a note. `fetchInfo`
+ * exists so tests can hand in a canned answer instead of a network.
+ */
+export async function resolveHardware(cfg, { timeout = 1500, fetchInfo = getInfo } = {}) {
+  let info = null;
+  try {
+    info = await fetchInfo(cfg.host, timeout);
+  } catch {
+    info = null;
+  }
+  const model = resolveModel({ key: cfg.modelKey, info });
+  const out = applyModel(cfg, { model, info });
+  if (!info) out.notes.push('The cube did not answer /json/info, so its address count is assumed, not read.');
+  return out;
+}
+
+async function getInfo(host, timeout) {
+  const r = await fetch(`http://${host}/json/info`, { signal: AbortSignal.timeout(timeout) });
+  if (!r.ok) throw new Error(`GET /json/info -> HTTP ${r.status}`);
+  return r.json();
 }

@@ -199,7 +199,11 @@ what you ran and what you saw.
   `profiles/nano-topology.json` and the `$comment` fields throughout
   `config.example.json` are the model to follow. A number with no method
   behind it is a guess wearing a measurement's clothes, and the next
-  person has no way to tell the difference.
+  person has no way to tell the difference. The same goes for
+  `src/models.mjs`: the vendor's counts there cite the product page they
+  came from, and a model only moves from `spec-sheet` to `measured` with a
+  profile behind it. If you own a HyperCube10-SE or 15-SE, that PR is the
+  most useful one this project can get right now.
 - **No unrelated formatting churn.** Keep diffs readable by touching only
   what the change requires.
 - **Comments explain why, code shows what.** If you catch yourself writing

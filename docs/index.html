@@ -3,8 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Drostex is a local studio for the WLED-based HyperCube Nano LED cube. It takes the pixels off the firmware and streams your own animations to it at 40fps. Zero dependencies, runs on your machine, nothing leaves your LAN.">
+<meta name="description" content="Drostex is a free, open source editor and controller for the Hyperspace HyperCube Nano, the WLED-based LED infinity mirror cube. Write your own effects, stream them at up to 60fps, and drive the cube's 95 built-in effects from your own machine. Includes measured specs: 44 addressable pixels, 132 LEDs, 12 edges.">
 <meta name="author" content="The Pixel Labs">
+<meta name="keywords" content="Hyperspace HyperCube Nano, HyperCube Nano, hyperspace cube, hyperspace cube nano, hyperspace cube editor, HyperCube Nano editor, HyperCube Nano app, HyperCube Nano WLED, LED infinity mirror cube, WLED cube controller, custom WLED effects, sACN E1.31, WLED DRGB, ESP32 LED cube">
 <meta name="color-scheme" content="dark light">
 
 <link rel="canonical" href="https://drostex.pixelabs.net/">
@@ -12,15 +13,15 @@
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://drostex.pixelabs.net/">
 <meta property="og:site_name" content="Drostex">
-<meta property="og:title" content="Drostex: write the 96th effect for a WLED HyperCube Nano">
-<meta property="og:description" content="Your LED cube shipped with 95 effects and no way to write the 96th. Drostex streams your own animations to it at 40fps. Write one as a pure function; the UI grows the knobs by itself.">
+<meta property="og:title" content="Drostex: a Hyperspace HyperCube Nano editor and WLED controller">
+<meta property="og:description" content="Your Hyperspace HyperCube Nano shipped with 95 effects and no way to write the 96th. Drostex is a free, open source editor that streams your own animations to it at up to 60fps over WLED DRGB.">
 
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@thepixelabs">
-<meta name="twitter:title" content="Drostex: write the 96th effect for a WLED HyperCube Nano">
-<meta name="twitter:description" content="Your LED cube shipped with 95 effects and no way to write the 96th. Drostex streams your own animations to it at 40fps.">
+<meta name="twitter:title" content="Drostex: a Hyperspace HyperCube Nano editor and WLED controller">
+<meta name="twitter:description" content="A free, open source effect editor and controller for the Hyperspace HyperCube Nano. Write your own animations, stream them at up to 60fps over WLED.">
 
-<title>Drostex: write the 96th effect for a WLED HyperCube Nano</title>
+<title>Drostex: Hyperspace HyperCube Nano editor and WLED cube controller</title>
 
 <!-- Fonts are self-hosted and the body face is the system stack, so this page
      makes no third-party requests at all. It asserts that nothing leaves your
@@ -31,7 +32,9 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "Drostex",
-  "description": "A local web studio for WLED-based LED art objects. Streams computed pixels over UDP to a HyperCube Nano at 40fps, and drives the firmware's own effects over its JSON API.",
+  "description": "A free, open source editor and controller for the Hyperspace HyperCube Nano, a WLED-based LED infinity mirror cube. Streams custom animations over WLED DRGB at up to 60fps, and drives the cube's 95 built-in effects over its JSON API.",
+  "alternateName": ["Hyperspace HyperCube Nano editor", "HyperCube Nano controller"],
+  "keywords": "Hyperspace HyperCube Nano, hyperspace cube editor, WLED, LED infinity mirror cube, sACN, DRGB, ESP32",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Linux, Windows",
   "url": "https://drostex.pixelabs.net/",
@@ -341,6 +344,14 @@ pre {
 @media (max-width: 700px) { .limits li { grid-template-columns: 1fr; gap: var(--s1); } }
 
 
+
+/* --- faq --- */
+.faq { display: grid; gap: 1px; background: var(--border-soft); border-radius: var(--r-md); overflow: hidden; }
+.faq__item { background: var(--bg); padding: var(--s5); }
+.faq__item h3 { margin: 0 0 var(--s2); font-size: 16.5px; letter-spacing: -0.01em; }
+.faq__item p { margin: 0; color: var(--muted); font-size: 15px; max-width: 78ch; }
+.faq__item code { font-size: 13px; color: var(--cyan); }
+
 /* ============================================================
    FOOTER
    ============================================================ */
@@ -357,6 +368,87 @@ pre {
   .btn:hover { transform: none; }
 }
 </style>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "What is the Hyperspace HyperCube Nano?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "A desk-sized LED infinity mirror cube. It stands on one corner, its twelve edges are lit by 132 LEDs, and it runs a rebranded fork of WLED on an ESP32, reporting itself as firmware hs-2.0. It ships with 95 built-in effects, 27 palettes and three rotating playlists, all selected from the cube's own web page or from its buttons."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Can you write your own effects for the HyperCube Nano?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Not with the stock firmware. The 95 effects are compiled in and there is no way to add a 96th. Drostex works around that by taking over the pixels: it computes frames on your own machine and streams them to the cube as realtime data, so an effect you write in about ten lines of JavaScript runs on the object exactly like a built-in one."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Does the HyperCube Nano run WLED, and does it accept WLED apps?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "It runs a WLED fork, so it answers the standard WLED JSON HTTP API and accepts WLED realtime UDP. Generic WLED tools that only set effects and colours will usually work. Tools that expect stock WLED's full config surface will not: /json/cfg answers 501 on this firmware, and the effect list, the sound-reactive block, the symmetry modes and the warp animation are vendor additions that plain WLED does not ship."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "How many LEDs does the HyperCube Nano actually have?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "132 LEDs over 12 edges of 11, which matches the vendor figure. The controller reports 88 addresses, but only the first 44 drive anything: addresses 44 to 87 are configured with no physical tap behind them. So you get 44 independently controllable pixels, not 132."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why can't each edge of the HyperCube Nano show a different colour?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The wiring is branching-parallel. One data line enters on an edge and splits at the corners, and every edge downstream of a split carries the same signal, so those edges always show the same colour. The fan-out is uneven: the four address blocks drive 1, 2, 4 and 5 edges. That is why there is no single LEDs-per-address figure, and why radial, symmetric and blooming patterns suit this hardware while per-edge independent control does not."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "What network protocols does the HyperCube Nano accept?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Measured on firmware hs-2.0: WLED DRGB on UDP port 21324 works and is what Drostex streams on, and sACN / E1.31 on universe 1, port 5568 works too. DDP and Art-Net are closed. The JSON HTTP API answers for control-plane calls, though /json/fxdata returns 501, so effect metadata has to be inferred rather than read."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Is there a desktop app or editor for the HyperCube Nano?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "Drostex is one, and it is free and open source under the MIT licence. It runs a small Node server on your own machine and opens a browser UI on 127.0.0.1. There is no cloud account, no signup and no telemetry, and every network call it makes goes either to your cube's LAN address or to its own local API."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Why do some HyperCube Nano effects look like nothing is happening?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "About 31 of the built-in effects are sound-reactive and use the microphone on the cube itself. In a quiet room they render almost nothing, which looks broken but is not. Drostex marks those effects so you can filter them out, or rotate only through them when there is music playing."
+      }
+    },
+    {
+      "@type": "Question",
+      "name": "Will Drostex work on other WLED devices?",
+      "acceptedAnswer": {
+        "@type": "Answer",
+        "text": "The streaming half plausibly will, on anything that accepts DRGB on port 21324, though it has only ever been run against one HyperCube Nano. The built-in effects tab will not work on stock WLED, because the effect index ranges and the sound-reactive classifier are read off this firmware's own effect list. Run scripts/blink.mjs against your device to find out what it accepts before relying on it."
+      }
+    }
+  ]
+}
+</script>
+
 </head>
 <body>
 
@@ -379,12 +471,12 @@ pre {
 <section class="hero">
   <div class="wrap hero__grid">
     <div>
-      <p class="eyebrow">LED art object studio</p>
+      <p class="eyebrow">Hyperspace HyperCube Nano &middot; editor and controller</p>
       <h1>Write the <em>96th</em> effect.</h1>
       <p class="hero__lede">
         Your cube shipped with 95 effects burned into its firmware and no way
         to add one. Drostex streams <strong>your own</strong> animations to it
-        at 40&nbsp;fps. You write one as a pure function. The UI reads the
+        at up to 60&nbsp;fps. You write one as a pure function. The UI reads the
         parameters you declared and builds the knobs for them.
       </p>
       <div class="hero__cta">
@@ -648,6 +740,60 @@ rainbow: {
   </div>
 </section>
 
+
+<hr class="divider">
+
+<!-- ===================== FAQ ===================== -->
+<section id="faq">
+  <div class="wrap">
+    <p class="section-label">&gt; questions</p>
+    <h2>The HyperCube Nano, answered.</h2>
+    <p class="section-desc">
+      The vendor documents almost none of this, so most of the answers below
+      came from measuring a real unit. The scripts that produced them ship in
+      the repository, and you can re-run every one against your own cube.
+    </p>
+
+    <div class="faq">
+      <div class="faq__item">
+        <h3>What is the Hyperspace HyperCube Nano?</h3>
+        <p>A desk-sized LED infinity mirror cube. It stands on one corner, its twelve edges are lit by 132 LEDs, and it runs a rebranded fork of WLED on an ESP32, reporting itself as firmware <code>hs-2.0</code>. It ships with 95 built-in effects, 27 palettes and three rotating playlists, all selected from the cube's own web page or from its buttons.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Can you write your own effects for the HyperCube Nano?</h3>
+        <p>Not with the stock firmware. The 95 effects are compiled in and there is no way to add a 96th. Drostex works around that by taking over the pixels: it computes frames on your own machine and streams them to the cube as realtime data, so an effect you write in about ten lines of JavaScript runs on the object exactly like a built-in one.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Does the HyperCube Nano run WLED, and does it accept WLED apps?</h3>
+        <p>It runs a WLED fork, so it answers the standard WLED JSON HTTP API and accepts WLED realtime UDP. Generic WLED tools that only set effects and colours will usually work. Tools that expect stock WLED's full config surface will not: <code>/json/cfg</code> answers 501 on this firmware, and the effect list, the sound-reactive block, the symmetry modes and the warp animation are vendor additions that plain WLED does not ship.</p>
+      </div>
+      <div class="faq__item">
+        <h3>How many LEDs does the HyperCube Nano actually have?</h3>
+        <p>132 LEDs over 12 edges of 11, which matches the vendor figure. The controller reports 88 addresses, but only the first 44 drive anything: addresses 44 to 87 are configured with no physical tap behind them. So you get 44 independently controllable pixels, not 132.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Why can't each edge of the HyperCube Nano show a different colour?</h3>
+        <p>The wiring is branching-parallel. One data line enters on an edge and splits at the corners, and every edge downstream of a split carries the same signal, so those edges always show the same colour. The fan-out is uneven: the four address blocks drive 1, 2, 4 and 5 edges. That is why there is no single LEDs-per-address figure, and why radial, symmetric and blooming patterns suit this hardware while per-edge independent control does not.</p>
+      </div>
+      <div class="faq__item">
+        <h3>What network protocols does the HyperCube Nano accept?</h3>
+        <p>Measured on firmware <code>hs-2.0</code>: WLED DRGB on UDP port 21324 works and is what Drostex streams on, and sACN / E1.31 on universe 1, port 5568 works too. DDP and Art-Net are closed. The JSON HTTP API answers for control-plane calls, though <code>/json/fxdata</code> returns 501, so effect metadata has to be inferred rather than read.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Is there a desktop app or editor for the HyperCube Nano?</h3>
+        <p>Drostex is one, and it is free and open source under the MIT licence. It runs a small Node server on your own machine and opens a browser UI on <code>127.0.0.1</code>. There is no cloud account, no signup and no telemetry, and every network call it makes goes either to your cube's LAN address or to its own local API.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Why do some HyperCube Nano effects look like nothing is happening?</h3>
+        <p>About 31 of the built-in effects are sound-reactive and use the microphone on the cube itself. In a quiet room they render almost nothing, which looks broken but is not. Drostex marks those effects so you can filter them out, or rotate only through them when there is music playing.</p>
+      </div>
+      <div class="faq__item">
+        <h3>Will Drostex work on other WLED devices?</h3>
+        <p>The streaming half plausibly will, on anything that accepts DRGB on port 21324, though it has only ever been run against one HyperCube Nano. The built-in effects tab will not work on stock WLED, because the effect index ranges and the sound-reactive classifier are read off this firmware's own effect list. Run <code>scripts/blink.mjs</code> against your device to find out what it accepts before relying on it.</p>
+      </div>
+    </div>
+  </div>
+</section>
 
 </main>
 

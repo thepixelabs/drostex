@@ -1,5 +1,7 @@
 # Drostex
 
+**[drostex.pixelabs.net](https://drostex.pixelabs.net)**
+
 Drostex is a local web studio for driving a **HyperCube Nano**, a WLED-based
 LED infinity-mirror cube. You run a small Node server on your own machine; it
 serves a UI in your browser and owns a UDP socket that streams computed
@@ -439,4 +441,4 @@ them, so the next person can re-run it rather than take your word for it.
 
 ## License
 
-MIT. See [LICENSE](LICENSE). Landing page: https://drostex.pixelabs.net
+MIT. See [LICENSE](LICENSE).

@@ -110,6 +110,10 @@ export const ANIMATIONS = {
   rainbow: {
     label: 'Rainbow',
     desc: 'a hue cycle travelling around the loop',
+    // `swatch` is for patterns whose colour cannot be read off their own
+    // parameters. Without it the card falls back to a full spectrum, which was
+    // telling the same lie about Fire as about Rainbow.
+    swatch: ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'],
     params: {
       cycles: num('Cycles', 1, 1, 4, 1, 'whole turns of hue around the strip — fractions would seam'),
       saturation: num('Saturation', 0.95, 0, 1),
@@ -121,6 +125,7 @@ export const ANIMATIONS = {
   edgebow: {
     label: 'Edge Bow',
     desc: 'a hue cycle along every edge at once, synchronised',
+    swatch: ['#ff0000', '#ffff00', '#00ff00', '#00ffff', '#0000ff', '#ff00ff', '#ff0000'],
     params: {
       cycles: num('Cycles per edge', 1, 1, 3, 1),
       saturation: num('Saturation', 0.95, 0, 1),
@@ -192,6 +197,9 @@ export const ANIMATIONS = {
   fire: {
     label: 'Fire',
     desc: 'warm turbulent flicker',
+    // Sampled off fn() below: r rises first, g follows at heat^2.2, b only
+    // arrives at the very top of the range as the blue tips.
+    swatch: ['#000000', '#8c1400', '#e04a00', '#ff9d1a', '#ffe9a8'],
     // Deliberately linear noise rather than sampled around a ring: turbulence
     // hides the loop seam completely, and a circular sample would impose a
     // symmetry that changes the character to fix something invisible.

@@ -6,10 +6,18 @@
  * the committed template.
  *
  * Resolution order, first match wins:
- *   1. a bare IPv4 argument   node scripts/blink.mjs 192.168.1.50
- *   2. DROSTEX_HOST env var
- *   3. config.json
- *   4. config.example.json
+ *   1. an explicit override    loadConfig({ host })
+ *   2. a bare IPv4 argument    node scripts/blink.mjs 192.168.1.50
+ *   3. DROSTEX_HOST env var
+ *   4. config.json
+ *   5. config.example.json
+ *
+ * The override exists for mDNS: the server looks for a cube on the network
+ * when nothing else named one, and needs to feed that answer back through the
+ * same resolution so every other field keeps its usual source. Discovery is
+ * deliberately NOT a step in this list. It is a fallback the caller reaches
+ * for after this throws, so a configured host always wins over whatever
+ * happens to be answering on the network today.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -34,13 +42,23 @@ function readJSON(path) {
   }
 }
 
-export function loadConfig() {
+export function loadConfig({ host: override = null } = {}) {
   const local = readJSON(join(ROOT, 'config.json'));
   const example = readJSON(join(ROOT, 'config.example.json'));
   const file = local ?? example ?? {};
 
   const cliHost = process.argv.slice(2).find((a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a));
-  const host = cliHost ?? process.env.DROSTEX_HOST ?? file.device?.host ?? DEFAULTS.host;
+  const host = override ?? cliHost ?? process.env.DROSTEX_HOST ?? file.device?.host ?? DEFAULTS.host;
+
+  // Where the address came from. `example` means nobody chose it: the template
+  // ships with a placeholder, so this function cannot throw on a fresh clone
+  // and callers cannot tell a real address from a stand-in without being told.
+  // The server uses this to decide whether to go looking on the network.
+  const source = override ? 'override'
+    : cliHost ? 'argv'
+    : process.env.DROSTEX_HOST ? 'env'
+    : local?.device?.host ? 'config'
+    : 'example';
 
   if (!host) {
     throw new Error(
@@ -49,7 +67,7 @@ export function loadConfig() {
     );
   }
 
-  if (!local && !cliHost && !process.env.DROSTEX_HOST) {
+  if (!local && !override && !cliHost && !process.env.DROSTEX_HOST) {
     console.warn(
       '  ! Using config.example.json — copy it to config.json and set your own device.host.\n',
     );
@@ -57,6 +75,7 @@ export function loadConfig() {
 
   return {
     host,
+    source,
     port: file.transport?.port ?? DEFAULTS.port,
     protocol: file.transport?.protocol ?? DEFAULTS.protocol,
     sacnPort: file.transport?.sacnPort ?? DEFAULTS.sacnPort,

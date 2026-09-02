@@ -25,22 +25,81 @@ import { loadConfig } from '../scripts/lib/config.mjs';
 import { Renderer } from '../src/renderer.mjs';
 import { ANIMATIONS, PALETTES, iq, SYMMETRY_NAMES } from '../src/animations.mjs';
 import { Cycler, POOLS } from '../src/cycler.mjs';
+import { paletteStops } from '../src/device-palettes.mjs';
+import { discover } from '../src/discover.mjs';
+import { setDeviceName } from '../src/device-name.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'web');
 const PORT = Number(process.env.PORT ?? 7847);
 
-const CONFIG = loadConfig();
+/**
+ * Resolves the device address, looking on the network if nobody named one.
+ *
+ * `source: 'example'` means the address came from the committed template, so
+ * it is a placeholder rather than a choice, and asking mDNS is strictly better
+ * than streaming at 192.168.1.50 and reporting the cube offline. Anything the
+ * user actually configured wins without a query being sent: discovery costs
+ * two seconds and should not be on the path of a working setup.
+ */
+async function resolveConfig() {
+  const cfg = loadConfig();
+  if (cfg.source !== 'example') return cfg;
+
+  console.log('\n  No device configured. Looking for one on the network...');
+  const found = await discover({ timeout: 2500 });
+
+  if (!found.length) {
+    console.log('  Found nothing. mDNS does not cross VLANs and some networks block it.');
+    console.log('  Set the address by hand:  cp config.example.json config.json\n');
+    return cfg;
+  }
+  const pick = found[0];
+  console.log(`  Found ${pick.name} at ${pick.host}${found.length > 1 ? ` (and ${found.length - 1} more)` : ''}`);
+  console.log('  Using it for this run. To make it permanent, put it in config.json.');
+  return loadConfig({ host: pick.host });
+}
+
+const CONFIG = await resolveConfig();
 const renderer = new Renderer(CONFIG);
+
+/**
+ * Which patterns each `Mode:` playlist rotates through.
+ *
+ * The firmware will not tell us - /json/fxdata answers 501, and `pl` is pinned
+ * at -1 because these rotations are not WLED playlists. But the cube's own web
+ * UI partitions the effect table by fixed index ranges to build its dropdown
+ * (`splice(0,5)` past the modes, then 75, then 40, then the remainder), and
+ * those boundaries land exactly on the blank-line group breaks in the array.
+ * No name straddles one.
+ *
+ * Reading the ranges off that partition rather than hand-listing 95 names means
+ * a firmware update that reshuffles the table moves one constant instead of
+ * silently lying about what a playlist plays.
+ */
+const MODE_RANGES = { 0: [5, 79], 1: [80, 119], 2: [120, 159] };
+function modeOf(id) {
+  // Kaleidoscopic is mode 0, so this returns null explicitly rather than
+  // leaning on falsiness - `|| null` would swallow it.
+  for (const [mode, [lo, hi]] of Object.entries(MODE_RANGES)) {
+    if (id >= lo && id <= hi) return Number(mode);
+  }
+  return null;
+}
 
 /** Effects are static for a given firmware, so fetch the list once. */
 let effectsCache = null;
 async function listEffects() {
   if (effectsCache) return effectsCache;
   const all = await device('/json');
-  effectsCache = all.effects
+  const real = all.effects
     .map((label, id) => ({ id, label, sound: isSoundReactive(id, label), mode: /^Mode:/.test(label) }))
     .filter((e) => e.label && e.label !== '-');
+  effectsCache = real.map((e) => (e.mode
+    // Members are resolved against the SAME filtered list, so the counts the UI
+    // shows are the patterns you can actually see, not the padded range width.
+    ? { ...e, members: real.filter((x) => !x.mode && modeOf(x.id) === e.id).map((x) => x.id) }
+    : { ...e, modeId: modeOf(e.id) }));
   return effectsCache;
 }
 
@@ -48,6 +107,7 @@ const cycler = new Cycler({
   renderer,
   device: (path, init) => device(path, init),
   listPresets: () => loadPresets(),
+  listFavorites: () => loadFavorites(),
   listEffects,
   animations: ANIMATIONS,
 });
@@ -61,11 +121,31 @@ const cycler = new Cycler({
  */
 const BUILD = createHash('sha1')
   .update(await readFile(join(ROOT, 'web/app.js')))
+  .update(await readFile(join(ROOT, 'web/cube.mjs')))
   .update(await readFile(join(ROOT, 'web/index.html')))
   .update(await readFile(join(ROOT, 'web/style.css')))
   .digest('hex').slice(0, 8);
 
 const PRESETS = join(ROOT, 'presets.json');
+const FAVORITES = join(ROOT, 'favorites.json');
+
+/**
+ * Stars on things Drostex does not own.
+ *
+ * A saved look carries its own `favorite` flag inside presets.json, because it
+ * is user data with a home already - and deleting the look takes the star with
+ * it for free. Patterns and the firmware's effects are fixed catalogues with
+ * nowhere to put a flag, so their stars live here, keyed by id.
+ */
+async function loadFavorites() {
+  try {
+    const f = JSON.parse(await readFile(FAVORITES, 'utf8'));
+    return { animation: f.animation ?? [], effect: f.effect ?? [] };
+  } catch { return { animation: [], effect: [] }; }
+}
+async function saveFavorites(f) {
+  await writeFile(FAVORITES, JSON.stringify(f, null, 2) + '\n');
+}
 
 /** Presets live in a plain JSON file - they are user data, not source. */
 async function loadPresets() {
@@ -89,6 +169,10 @@ const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  // Without this, .mjs falls through to application/octet-stream and the
+  // browser refuses to execute the module outright: strict MIME checking on
+  // ES modules is not advisory. Symptom is a blank page and one console line.
+  '.mjs': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
 };
@@ -145,6 +229,26 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(403); return res.end('forbidden host');
   }
 
+  /**
+   * CSRF guard on everything that changes something.
+   *
+   * The Host check above stops DNS rebinding, but not a plain form on a page
+   * you happen to have open. An HTML form can POST cross-origin with no
+   * preflight, and readBody ignores content-type, so a form whose urlencoded
+   * body happens to parse as JSON reaches these handlers - which now includes
+   * one that writes to the user's hardware.
+   *
+   * Requiring application/json closes it: that content type is not one a form
+   * can produce, so a cross-origin attempt becomes a preflight, and we answer
+   * no CORS headers at all. Our own page already sends it on every POST.
+   */
+  if (req.method === 'POST' && p.startsWith('/api/')) {
+    const ct = (req.headers['content-type'] ?? '').split(';')[0].trim();
+    if (ct !== 'application/json') {
+      return json(res, 415, { error: 'POST requires content-type: application/json' });
+    }
+  }
+
   try {
     if (p === '/api/status') {
       // allSettled, not all: these are two separate requests to an ESP32 that
@@ -161,7 +265,13 @@ const server = http.createServer(async (req, res) => {
           name: dev.name, product: dev.product, brand: dev.brand,
           live: dev.live, count: dev.leds?.count, power: dev.leds?.pwr,
           on: dstate?.on, bri: dstate?.bri, sb: dstate?.sb, sparkle: dstate?.sparkle,
-          sym: dstate?.seg?.[0]?.sym,
+          // fx/sx/ix/pal ride along off the /json/state we already fetched, so
+          // the page can keep its effect highlighting honest between polls and
+          // show which of the four device controls are still on the effect's
+          // own defaults. No extra request to a busy ESP32.
+          sym: dstate?.seg?.[0]?.sym, fx: dstate?.seg?.[0]?.fx,
+          sx: dstate?.seg?.[0]?.sx, ix: dstate?.seg?.[0]?.ix,
+          pal: dstate?.seg?.[0]?.pal,
         },
         config: {
           host: CONFIG.host, working: CONFIG.working, perEdge: CONFIG.perEdge,
@@ -172,11 +282,36 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (p === '/api/discover') {
+      // Deliberately not cached. The answer is "what is on the network right
+      // now", and a cube that just moved is exactly when someone asks.
+      return json(res, 200, {
+        devices: await discover({ timeout: Number(url.searchParams.get('t')) || 2500 }),
+        current: CONFIG.host,
+      });
+    }
+
+    if (p === '/api/device/name' && req.method === 'POST') {
+      // Writes through to the cube, because the name in the header comes from
+      // the device's own /json/info. A local nickname would disagree with
+      // every other client on the network, including the cube's own web UI.
+      const { name } = await readBody(req);
+      try {
+        const r = await setDeviceName(CONFIG.host, name);
+        // /json/info is what the UI reads the name from, and it is cached
+        // nowhere, so nothing else needs invalidating.
+        return json(res, 200, r);
+      } catch (e) {
+        return json(res, 400, { error: String(e.message ?? e) });
+      }
+    }
+
     if (p === '/api/animations') {
       return json(res, 200, Object.entries(ANIMATIONS).map(([id, a]) => ({
         id, label: a.label ?? id, desc: a.desc ?? '',
         params: a.params ?? {},
         values: renderer.animParams[id],
+        swatch: a.swatch ?? null,
       })));
     }
 
@@ -241,6 +376,15 @@ const server = http.createServer(async (req, res) => {
           await savePresets(next);
           return json(res, 200, next);
         }
+        // Toggled here rather than sent as a target boolean, so two tabs cannot
+        // race each other into disagreeing about the star. Unknown id is a
+        // silent no-op, matching what delete above already does.
+        if (body.favorite) {
+          const next = presets.map((x) =>
+            (x.id === body.favorite ? { ...x, favorite: !x.favorite } : x));
+          await savePresets(next);
+          return json(res, 200, next);
+        }
         // A preset describes a LOOK: which animation, its parameter values, and
         // how fast it runs. Brightness is deliberately excluded - it is a
         // property of the room, not of the look, and a saved one would fight
@@ -258,6 +402,25 @@ const server = http.createServer(async (req, res) => {
         return json(res, 200, next);
       }
       return json(res, 200, await loadPresets());
+    }
+
+    if (p === '/api/favorites') {
+      if (req.method === 'POST') {
+        const { kind, id } = await readBody(req);
+        if (kind !== 'animation' && kind !== 'effect') {
+          return json(res, 400, { error: 'kind must be animation or effect' });
+        }
+        const f = await loadFavorites();
+        // Effect ids arrive as numbers, animation ids as strings; compare after
+        // normalising so a round-trip through JSON cannot desync them.
+        const key = kind === 'effect' ? Number(id) : String(id);
+        f[kind] = f[kind].some((x) => x === key)
+          ? f[kind].filter((x) => x !== key)
+          : [...f[kind], key];
+        await saveFavorites(f);
+        return json(res, 200, f);
+      }
+      return json(res, 200, await loadFavorites());
     }
 
     if (p === '/api/presets/load' && req.method === 'POST') {
@@ -333,7 +496,9 @@ const server = http.createServer(async (req, res) => {
         // The firmware pads its table with '-' placeholders; only real entries
         // are worth showing.
         effects: await listEffects(),
-        palettes: all.palettes.map((label, id) => ({ id, label }))
+        // `stops` are ours, not the firmware's - it publishes palette names and
+        // nothing else. See src/device-palettes.mjs.
+        palettes: all.palettes.map((label, id) => ({ id, label, stops: paletteStops(label) }))
           .filter((p2) => p2.label && p2.label !== '-'),
         state: all.state,
       });

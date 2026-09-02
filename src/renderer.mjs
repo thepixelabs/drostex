@@ -117,9 +117,19 @@ export class Renderer {
    * Called at startup rather than at first play, because the vendor's `warp`
    * animation ends by setting brightness to 255 - so a value read after one has
    * run is ours by accident, not theirs.
+   *
+   * 255 is refused outright for the same reason, and it is the more common
+   * case: streaming pins the device to 255, so a Drostex that was killed
+   * mid-stream leaves it there. The next process read that back, adopted it as
+   * a preference, and restored 255 on every stop from then on - the value
+   * latched and the brightness slider jumped to full whenever a preset was
+   * loaded. A genuine wish for full brightness still arrives, via the slider
+   * setting savedBrightness explicitly; what cannot be trusted is 255 inferred
+   * from a device we may well have put there ourselves.
    */
   captureBrightness(bri) {
     if (this.savedBrightness !== null || typeof bri !== 'number') return;
+    if (bri >= 255) return;
     this.savedBrightness = bri;
     if (!this.brightnessTouched) this.params.brightness = bri / 255;
   }
@@ -161,14 +171,22 @@ export class Renderer {
     return this.animParams[name];
   }
 
-  /** Puts the user's brightness back. */
+  /**
+   * Puts the user's brightness back.
+   *
+   * With nothing saved - which now includes "the device read 255 and we refused
+   * to believe it" - fall back to our own slider. While streaming, that slider
+   * IS the level being looked at, so handing the same level to the onboard
+   * effect keeps the room at the brightness the user actually chose. Returning
+   * early instead would leave the cube pinned at the 255 we set.
+   */
   async restoreDevice() {
-    if (this.savedBrightness === null) return;
+    const bri = this.savedBrightness ?? Math.round(clamp01(this.params.brightness) * 255);
     try {
       await fetch(`http://${this.config.host}/json/state`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ bri: this.savedBrightness }),
+        body: JSON.stringify({ bri }),
         signal: AbortSignal.timeout(4000),
       });
     } catch {

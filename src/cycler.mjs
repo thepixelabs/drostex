@@ -12,6 +12,7 @@
 
 export const POOLS = {
   looks: 'My saved looks',
+  favorites: 'My favourites',
   patterns: 'My patterns',
   effects: 'Built-in effects — all',
   'effects-sound': 'Built-in effects — sound-reactive',
@@ -99,6 +100,30 @@ export class Cycler {
     if (this.pool === 'looks' || this.pool === 'all') {
       for (const p of await listPresets()) {
         out.push({ kind: 'preset', id: p.id, label: p.name });
+      }
+    }
+    // Standalone, deliberately not folded into the `all` branch above: `all`
+    // already walks every preset, so OR-ing this in would enter a starred look
+    // twice and skew the shuffle towards it.
+    //
+    // Spans all three kinds, because a star means the same thing wherever it
+    // was put - "play this one" - and a favourites rotation that silently
+    // skipped the starred effects would be lying about its own name.
+    if (this.pool === 'favorites') {
+      for (const p of await listPresets()) {
+        if (p.favorite) out.push({ kind: 'preset', id: p.id, label: p.name });
+      }
+      const fav = this.deps.listFavorites ? await this.deps.listFavorites() : { animation: [], effect: [] };
+      for (const id of fav.animation) {
+        if (animations[id]) out.push({ kind: 'animation', id, label: animations[id].label ?? id });
+      }
+      // Modes are excluded for the same reason they are excluded everywhere
+      // else: they are the firmware's own rotations, and cycling one alongside
+      // single effects is two rotations fighting over the same LEDs.
+      const byId = new Map((await listEffects()).map((e) => [e.id, e]));
+      for (const id of fav.effect) {
+        const e = byId.get(id);
+        if (e && !e.mode) out.push({ kind: 'effect', id: e.id, label: e.label });
       }
     }
     if (this.pool === 'patterns' || this.pool === 'all') {

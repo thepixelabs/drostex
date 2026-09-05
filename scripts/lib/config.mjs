@@ -49,16 +49,18 @@ export function loadConfig({ host: override = null } = {}) {
   const file = local ?? example ?? {};
 
   const cliHost = process.argv.slice(2).find((a) => /^\d{1,3}(\.\d{1,3}){3}$/.test(a));
-  const host = override ?? cliHost ?? process.env.DROSTEX_HOST ?? file.device?.host ?? DEFAULTS.host;
+  const configuredHost = (local?.device?.host && local.device.host !== 'auto') ? local.device.host : null;
+  const fallbackHost = configuredHost ?? example?.device?.host ?? DEFAULTS.host;
+  const host = override ?? cliHost ?? process.env.DROSTEX_HOST ?? fallbackHost;
 
   // Where the address came from. `example` means nobody chose it: the template
-  // ships with a placeholder, so this function cannot throw on a fresh clone
+  // ships with a placeholder, so this function cannot trigger discovery bypass
   // and callers cannot tell a real address from a stand-in without being told.
   // The server uses this to decide whether to go looking on the network.
   const source = override ? 'override'
     : cliHost ? 'argv'
     : process.env.DROSTEX_HOST ? 'env'
-    : local?.device?.host ? 'config'
+    : configuredHost ? 'config'
     : 'example';
 
   if (!host) {

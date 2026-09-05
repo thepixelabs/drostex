@@ -51,38 +51,66 @@ const START_REMOTE = process.argv.includes('--lan') || process.env.DROSTEX_LAN =
 const remote = new Map(); // LAN address -> the http.Server listening on it
 const remoteOn = () => remote.size > 0;
 
+async function saveConfigHost(host, extra = {}) {
+  const file = join(ROOT, 'config.json');
+  let current = {};
+  try { current = JSON.parse(await readFile(file, 'utf8')); } catch { }
+  current.device = current.device || {};
+  if (host && host.trim() !== 'auto') {
+    current.device.host = host.trim();
+  } else {
+    delete current.device.host;
+  }
+  if (extra.name && !current.device.name) current.device.name = extra.name;
+  if (extra.mac && !current.device.mac) current.device.mac = extra.mac;
+  await writeFile(file, JSON.stringify(current, null, 2) + '\n');
+}
+
 /**
- * Resolves the device address, looking on the network if nobody named one.
- *
- * `source: 'example'` means the address came from the committed template, so
- * it is a placeholder rather than a choice, and asking mDNS is strictly better
- * than streaming at 192.168.1.50 and reporting the cube offline. Anything the
- * user actually configured wins without a query being sent: discovery costs
- * two seconds and should not be on the path of a working setup.
+ * Resolves the device address, looking on the network if nobody named one
+ * or if the configured host does not answer. Automatically updates config.json
+ * when a device is found.
  */
 async function resolveConfig() {
-  const cfg = loadConfig();
-  if (cfg.source !== 'example') return cfg;
+  let cfg = loadConfig();
+  let hw = null;
 
-  console.log('\n  No device configured. Looking for one on the network...');
+  if (cfg.source !== 'example') {
+    hw = await resolveHardware(cfg, { timeout: 1500 });
+    const didNotAnswer = hw.notes.some((n) => /did not answer/.test(n));
+    if (!didNotAnswer || cfg.source === 'argv' || cfg.source === 'env') {
+      return { cfg, hw };
+    }
+    console.log(`\n  Configured host (${cfg.host}) did not respond. Looking on the network...`);
+  } else {
+    console.log('\n  No device configured. Looking for one on the network...');
+  }
+
   const found = await discover({ timeout: 2500 });
 
   if (!found.length) {
+    if (cfg.source !== 'example') {
+      console.log('  Discovery found nothing; keeping configured host.');
+      return { cfg, hw };
+    }
     console.log('  Found nothing. mDNS does not cross VLANs and some networks block it.');
     console.log('  Set the address by hand:  cp config.example.json config.json\n');
-    return cfg;
+    return { cfg, hw: await resolveHardware(cfg) };
   }
+
   const pick = found[0];
   console.log(`  Found ${pick.name} at ${pick.host}${found.length > 1 ? ` (and ${found.length - 1} more)` : ''}`);
-  console.log('  Using it for this run. To make it permanent, put it in config.json.');
-  return loadConfig({ host: pick.host });
+  if (pick.host !== cfg.host) {
+    console.log(`  Updating config.json with discovered host: ${pick.host}`);
+    await saveConfigHost(pick.host, { name: pick.name, mac: pick.mac });
+  }
+  cfg = loadConfig({ host: pick.host });
+  hw = await resolveHardware(cfg);
+  return { cfg, hw };
 }
 
-// Then ask the cube what it is. One /json/info with a short timeout settles
-// the model, the address count and the LEDs per edge before the renderer
-// sizes its buffer; a cube that is off right now just leaves the config as
-// config.json and the model table had it.
-const CONFIG = await resolveHardware(await resolveConfig());
+const { hw: initialHW } = await resolveConfig();
+let CONFIG = initialHW;
 const renderer = new Renderer(CONFIG);
 
 /**
@@ -417,6 +445,18 @@ const handle = async (req, res) => {
         devices: await discover({ timeout: Number(url.searchParams.get('t')) || 2500 }),
         current: CONFIG.host,
       });
+    }
+
+    if (p === '/api/config/host' && req.method === 'POST') {
+      const { host } = await readBody(req);
+      await saveConfigHost(host);
+      CONFIG = await resolveHardware(loadConfig({ host: (host && host.trim() !== 'auto') ? host.trim() : null }));
+      renderer.config = CONFIG;
+      if (renderer.sock) {
+        try { renderer.sock.close(); } catch { }
+        renderer.sock = null;
+      }
+      return json(res, 200, { ok: true, host: CONFIG.host });
     }
 
     if (p === '/api/device/name' && req.method === 'POST') {

@@ -1366,16 +1366,43 @@ $('find-cube').addEventListener('click', async () => {
     if (!devices.length) {
       $('offline-detail').textContent =
         'Nothing answered on the network. mDNS does not cross VLANs and some '
-        + 'networks block it, so set the address by hand in config.json.';
+        + 'networks block it, so set the address manually below.';
     } else {
-      const list = devices.map((d) => `${d.name} at ${d.host}`).join(', ');
-      $('offline-detail').textContent = devices.some((d) => d.host === current)
-        ? `Found ${list}, which is the address already configured. The cube is `
-          + 'on the network but not answering, so try power-cycling it.'
-        : `Found ${list}. Put that address in config.json and restart Drostex.`;
+      const pick = devices[0];
+      $('manual-host').value = pick.host;
+      if (pick.host !== current) {
+        await api('config/host', { method: 'POST', body: JSON.stringify({ host: pick.host }) });
+        $('offline-detail').textContent = `Found ${pick.name} at ${pick.host}. Saved and connected!`;
+        offlineStrikes = 0;
+        setOffline(false);
+        poll();
+      } else {
+        const list = devices.map((d) => `${d.name} at ${d.host}`).join(', ');
+        $('offline-detail').textContent = `Found ${list}, which is the address already configured. The cube is on the network but not answering, so try power-cycling it.`;
+      }
     }
   } catch (e) {
     $('offline-detail').textContent = `Could not search: ${e.message}`;
+  } finally {
+    b.textContent = was;
+    b.disabled = false;
+  }
+});
+
+$('save-host').addEventListener('click', async () => {
+  const host = $('manual-host').value.trim();
+  const b = $('save-host');
+  b.disabled = true;
+  const was = b.textContent;
+  b.textContent = 'Saving…';
+  try {
+    await api('config/host', { method: 'POST', body: JSON.stringify({ host }) });
+    $('offline-detail').textContent = 'Address saved and applied!';
+    offlineStrikes = 0;
+    setOffline(false);
+    poll();
+  } catch (e) {
+    $('offline-detail').textContent = `Could not save: ${e.message}`;
   } finally {
     b.textContent = was;
     b.disabled = false;

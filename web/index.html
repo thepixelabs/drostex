@@ -138,10 +138,15 @@
   <div class="offline" id="offline" hidden>
     <strong id="offline-title">Can&rsquo;t reach the cube.</strong>
     <span id="offline-detail">Check it&rsquo;s powered on and on the same network as this computer.</span>
-    <button class="btn" id="retry">Retry</button>
-    <!-- The address is the thing most likely to be wrong, and the one thing
-         the banner can actually fix by itself. -->
-    <button class="btn" id="find-cube">Find my cube</button>
+    <div class="offline-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+      <button class="btn" id="retry">Retry</button>
+      <button class="btn" id="find-cube">Find my cube</button>
+    </div>
+    <div class="offline-manual" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+      <label for="manual-host" style="font-size: 0.9em; opacity: 0.9;">Or enter IP / hostname:</label>
+      <input type="text" id="manual-host" placeholder="192.168.1.50 or hs-xxxxxx.local" autocomplete="off" style="padding: 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg); color: var(--fg);">
+      <button class="btn" id="save-host">Save</button>
+    </div>
   </div>
 
   <!-- ── My looks ─────────────────────────────────────────── -->
